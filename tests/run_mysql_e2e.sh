@@ -1,144 +1,145 @@
 #!/bin/bash
-set -e
+#
+# btrace MySQL e2e showcase + overhead benchmark.
+#
+# - Starts a throwaway Percona Server 8.0 container.
+# - Prepares a sysbench OLTP dataset.
+# - Runs OLTP read-write workload twice: baseline, then with btrace attached.
+# - Reports TPS for both runs and btrace overhead %.
+# - Generates text + DOT report in ./out/.
+#
+# Requires: docker, sysbench, sudo, btrace built at ./btrace.
+#
 
+set -uo pipefail
+
+CONTAINER="btrace-mysql"
+PORT=3307
+IMAGE="percona/percona-server:8.0"
+TABLES=4
+TABLE_SIZE=10000
+THREADS=4
+TIME=10
+OUT="./out"
 BTRACE="./btrace"
-OUTDIR="./out"
-MYSQL_CTR="btrace-mysql"
-MYSQL_IMG="percona/percona-server:8.0"
-MYSQL_PW="test"
-MYSQL_PORT=3306
 
-mkdir -p "$OUTDIR"
+mkdir -p "$OUT"
+
+SB_COMMON=(
+    /usr/share/sysbench/oltp_read_write.lua
+    --mysql-host=127.0.0.1 --mysql-port="$PORT"
+    --mysql-user=root --mysql-password=root --mysql-db=sb
+    --tables="$TABLES" --table-size="$TABLE_SIZE"
+    --threads="$THREADS" --time="$TIME" --report-interval=0
+)
 
 start_mysql() {
-    echo "Starting MySQL container..."
-    docker rm -f $MYSQL_CTR 2>/dev/null || true
-    docker run -d --name $MYSQL_CTR \
-        -e MYSQL_ROOT_PASSWORD=$MYSQL_PW \
-        -p $MYSQL_PORT:3306 \
-        $MYSQL_IMG \
-        --thread_handling=one-thread-per-connection \
-        --thread_cache_size=2 \
-        --max_connections=8 2>&1
+    echo "[mysql] starting $IMAGE on port $PORT ..."
+    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+    docker run -d --name "$CONTAINER" \
+        -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=sb \
+        -p "${PORT}:3306" "$IMAGE" >/dev/null
 
-    echo "Waiting for MySQL to be ready..."
-    for i in $(seq 1 60); do
-        if docker exec $MYSQL_CTR mysqladmin ping -h127.0.0.1 -uroot -p$MYSQL_PW --silent 2>/dev/null; then
-            echo "  Ready after ${i}s"
+    echo "[mysql] waiting for mysqld ..."
+    for _ in $(seq 1 60); do
+        if docker exec "$CONTAINER" mysqladmin -uroot -proot ping 2>/dev/null \
+                | grep -q alive; then
+            echo "[mysql] ready"
             return 0
         fi
         sleep 1
     done
-    echo "  MySQL failed to start"
-    return 1
+    echo "[mysql] failed to start" >&2
+    exit 1
 }
 
 stop_mysql() {
-    docker rm -f $MYSQL_CTR 2>/dev/null || true
+    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 }
 
-get_mysqld_pid() {
-    docker top $MYSQL_CTR | grep mysqld | awk '{print $2}' | head -1
+get_host_pid() {
+    docker inspect -f '{{.State.Pid}}' "$CONTAINER"
 }
 
-run_benchmark() {
+bench() {
     local label="$1"
-    local nthreads="$2"
-    local niter="$3"
-
-    echo "  Running benchmark: $nthreads threads, $niter iterations..."
-
-    docker exec $MYSQL_CTR mysql -uroot -p$MYSQL_PW -e "
-        CREATE DATABASE IF NOT EXISTS btrace_bench;
-        USE btrace_bench;
-        CREATE TABLE IF NOT EXISTS t1 (id INT PRIMARY KEY, val INT) ENGINE=InnoDB;
-        TRUNCATE TABLE t1;
-        INSERT INTO t1 VALUES (1, 0);
-    " 2>/dev/null
-
-    local start_ns=$(date +%s%N)
-
-    for t in $(seq 1 $nthreads); do
-        (
-            for i in $(seq 1 $niter); do
-                docker exec $MYSQL_CTR mysql -uroot -p$MYSQL_PW -e "
-                    USE btrace_bench;
-                    BEGIN;
-                    SELECT * FROM t1 WHERE id=1 FOR UPDATE;
-                    UPDATE t1 SET val=val+1 WHERE id=1;
-                    COMMIT;
-                " 2>/dev/null
-            done
-        ) &
-    done
-    wait
-
-    local end_ns=$(date +%s%N)
-    local elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
-
-    echo "  Elapsed: ${elapsed_ms}ms"
-    echo $elapsed_ms
+    sysbench "${SB_COMMON[@]}" run 2>&1 \
+        | awk -v l="$label" '
+            /transactions:/ {
+                v = $3
+                gsub(/[()]/, "", v)
+                printf "%s tps=%s\n", l, v
+            }'
 }
 
-echo "=== btrace MySQL e2e test ==="
-echo ""
+main() {
+    if ! command -v sysbench >/dev/null; then
+        echo "sysbench not found; sudo apt install sysbench" >&2
+        exit 1
+    fi
 
-start_mysql
+    echo "========================================="
+    echo " btrace MySQL e2e + overhead benchmark"
+    echo "========================================="
+    echo " sysbench: $TABLES tables x $TABLE_SIZE rows, $THREADS threads, ${TIME}s"
+    echo ""
 
-MYSQLD_PID=$(get_mysqld_pid)
-echo "mysqld host PID: $MYSQLD_PID"
+    # ---- Phase 0: start MySQL + prepare dataset ----
+    start_mysql
+    local pid
+    pid=$(get_host_pid)
+    echo "[mysql] host pid: $pid"
 
-NTHREADS=4
-NITER=50
+    echo "[sysbench] preparing dataset ..."
+    sysbench "${SB_COMMON[@]}" prepare >/dev/null
 
-echo ""
-echo "--- Phase 1: Baseline (no btrace) ---"
-BASELINE_MS=$(run_benchmark "baseline" $NTHREADS $NITER)
+    # ---- Phase 1: baseline (no btrace) ----
+    echo ""
+    echo "[bench] === baseline (no btrace) ==="
+    local base
+    base=$(bench baseline | tee "$OUT/baseline.txt" | awk -F= '{print $2}')
 
-echo ""
-echo "--- Phase 2: With btrace profiling ---"
-BTFILE="$OUTDIR/mysql.btrace"
-sudo $BTRACE record -p $MYSQLD_PID -d 8 -o "$BTFILE" &
-BTRACE_PID=$!
-sleep 1
+    # ---- Phase 2: with btrace profiling ----
+    echo ""
+    echo "[bench] === with btrace attached ==="
+    local btfile="$OUT/mysql.btrace"
+    sudo "$BTRACE" record -p "$pid" -d 8 -o "$btfile" >"$OUT/record.log" 2>&1 &
+    local btpid=$!
+    sleep 1
 
-PROFILED_MS=$(run_benchmark "profiled" $NTHREADS $NITER)
+    local traced
+    traced=$(bench traced | tee "$OUT/traced.txt" | awk -F= '{print $2}')
 
-sudo kill -INT $BTRACE_PID 2>/dev/null
-wait $BTRACE_PID 2>/dev/null
+    sudo kill -INT $btpid 2>/dev/null || true
+    wait $btpid 2>/dev/null || true
 
-echo ""
-echo "--- Generating report ---"
-$BTRACE report -i "$BTFILE" -o "$OUTDIR" --dot > "$OUTDIR/mysql.txt" 2>"$OUTDIR/mysql_stderr.log"
-if [ -f "$OUTDIR/btrace.dot" ]; then
-    mv "$OUTDIR/btrace.dot" "$OUTDIR/mysql.dot"
-fi
+    # ---- Phase 3: generate report ----
+    echo ""
+    echo "[report] generating text + DOT report ..."
+    sudo chown "$USER:$USER" "$btfile" 2>/dev/null || true
+    "$BTRACE" report -i "$btfile" -o "$OUT" --dot \
+        > "$OUT/mysql.txt" 2>"$OUT/mysql.log"
+    if [ -f "$OUT/btrace.dot" ]; then
+        mv "$OUT/btrace.dot" "$OUT/mysql.dot"
+    fi
 
-echo ""
-echo "--- Results ---"
-echo "  Baseline:    ${BASELINE_MS}ms"
-echo "  With btrace: ${PROFILED_MS}ms"
+    # ---- Cleanup ----
+    stop_mysql
 
-if [ "$BASELINE_MS" -gt 0 ]; then
-    OVERHEAD=$(( (PROFILED_MS - BASELINE_MS) * 100 / BASELINE_MS ))
-    echo "  Overhead:    ${OVERHEAD}%"
-else
-    OVERHEAD=0
-    echo "  Overhead:    N/A"
-fi
+    # ---- Summary ----
+    echo ""
+    echo "========================================="
+    echo " results"
+    echo "========================================="
+    echo " baseline tps : $base"
+    echo " traced   tps : $traced"
+    if [ -n "$base" ] && [ -n "$traced" ] && [ "$base" != "0" ]; then
+        awk -v b="$base" -v t="$traced" 'BEGIN { printf " overhead     : %.2f%%\n", (b-t)/b*100 }'
+    fi
+    echo ""
+    echo " artifacts in $OUT/:"
+    ls -lh "$OUT/"
+    echo "========================================="
+}
 
-EVENTS=$(grep "Events:" "$OUTDIR/mysql.txt" 2>/dev/null | grep -oP 'Events: \K[0-9]+' || echo "?")
-CATS=$(grep -oP '\[\w+\]' "$OUTDIR/mysql.txt" 2>/dev/null | sort -u | tr '\n' ' ')
-
-echo "  Events:      $EVENTS"
-echo "  Categories:  $CATS"
-echo ""
-echo "Files saved:"
-echo "  $BTFILE"
-echo "  $OUTDIR/mysql.txt"
-echo "  $OUTDIR/mysql.dot"
-
-stop_mysql
-
-echo ""
-echo "=== MySQL e2e complete ==="
+main "$@"
