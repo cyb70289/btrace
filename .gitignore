@@ -2,9 +2,13 @@
 *.o
 *.skel.h
 btrace
+src/include/vmlinux.h
 
 # Record output
 *.btrace
+
+# Test output
+out/
 
 # Test binaries
 test_mutex
@@ -25,6 +29,3 @@ test_epoll
 
 # Opencode
 opencode.json
-
-# Temporary test files
-/tmp/
