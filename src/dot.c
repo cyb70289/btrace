@@ -1,4 +1,6 @@
 #include "dot.h"
+#include "storage.h"
+#include "sym.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -73,6 +75,7 @@ void dep_graph_init(struct dep_graph *g)
 
 void dep_graph_add(struct dep_graph *g, u32 from_tid, u32 to_tid,
                    int block_cat, int waker_cat, u64 duration_ns,
+                   int blocked_kstack_id, int waker_kstack_id,
                    const char *from_comm, const char *to_comm)
 {
     for (int i = 0; i < g->edge_count; i++) {
@@ -81,6 +84,10 @@ void dep_graph_add(struct dep_graph *g, u32 from_tid, u32 to_tid,
             e->block_cat == block_cat && e->waker_cat == waker_cat) {
             e->total_ns += duration_ns;
             e->count++;
+            if (blocked_kstack_id >= 0)
+                e->blocked_kstack_id = blocked_kstack_id;
+            if (waker_kstack_id >= 0)
+                e->waker_kstack_id = waker_kstack_id;
             return;
         }
     }
@@ -97,6 +104,8 @@ void dep_graph_add(struct dep_graph *g, u32 from_tid, u32 to_tid,
     e->waker_cat = waker_cat;
     e->total_ns = duration_ns;
     e->count = 1;
+    e->blocked_kstack_id = blocked_kstack_id;
+    e->waker_kstack_id = waker_kstack_id;
     strncpy(e->from_comm, from_comm, COMM_LEN - 1);
     strncpy(e->to_comm, to_comm, COMM_LEN - 1);
 }
@@ -135,8 +144,88 @@ static void format_duration(u64 ns, char *buf, size_t bufsz)
         snprintf(buf, bufsz, "%.2fs", (double)ns / 1e9);
 }
 
+static void json_escape(FILE *f, const char *s)
+{
+    if (!s) { fprintf(f, "null"); return; }
+    fputc('"', f);
+    for (; *s; s++) {
+        if (*s == '"') fprintf(f, "\\\"");
+        else if (*s == '\\') fprintf(f, "\\\\");
+        else if (*s == '\n') fprintf(f, "\\n");
+        else fputc(*s, f);
+    }
+    fputc('"', f);
+}
+
+static void write_edge_stacks(FILE *f, struct dep_edge *e, int edge_idx,
+                              struct bt_reader *r, struct ksym_table *kt)
+{
+    fprintf(f, "  \"e%d\": {\n", edge_idx);
+    fprintf(f, "    \"from\": \"%u (%s)\",\n", e->from_tid, e->from_comm);
+
+    if (is_special_tid(e->to_tid))
+        fprintf(f, "    \"to\": \"[%s]\",\n", special_node_name(e->waker_cat));
+    else
+        fprintf(f, "    \"to\": \"%u (%s)\",\n", e->to_tid, e->to_comm);
+
+    fprintf(f, "    \"block_cat\": \"%s\",\n", block_cat_name(e->block_cat));
+    fprintf(f, "    \"waker_cat\": \"%s\",\n", waker_cat_name(e->waker_cat));
+
+    char dur[32];
+    format_duration(e->total_ns, dur, sizeof(dur));
+    fprintf(f, "    \"duration\": \"%s\",\n", dur);
+    fprintf(f, "    \"count\": %u,\n", e->count);
+
+    fprintf(f, "    \"blocked_stack\": [");
+    if (r && e->blocked_kstack_id >= 0) {
+        u64 *frames = NULL;
+        int nframes = 0;
+        if (bt_reader_get_stack(r, e->blocked_kstack_id, &frames, &nframes) == 0) {
+            for (int j = 0; j < nframes && j < 12; j++) {
+                if (j) fprintf(f, ", ");
+                u64 off;
+                const char *name = ksym_lookup(kt, frames[j], &off);
+                if (name) {
+                    char tmp[128];
+                    snprintf(tmp, sizeof(tmp), "%s+0x%llx", name, (unsigned long long)off);
+                    json_escape(f, tmp);
+                } else {
+                    char tmp[32];
+                    snprintf(tmp, sizeof(tmp), "0x%llx", (unsigned long long)frames[j]);
+                    json_escape(f, tmp);
+                }
+            }
+        }
+    }
+    fprintf(f, "],\n");
+
+    fprintf(f, "    \"waker_stack\": [");
+    if (r && e->waker_kstack_id >= 0) {
+        u64 *frames = NULL;
+        int nframes = 0;
+        if (bt_reader_get_stack(r, e->waker_kstack_id, &frames, &nframes) == 0) {
+            for (int j = 0; j < nframes && j < 12; j++) {
+                if (j) fprintf(f, ", ");
+                u64 off;
+                const char *name = ksym_lookup(kt, frames[j], &off);
+                if (name) {
+                    char tmp[128];
+                    snprintf(tmp, sizeof(tmp), "%s+0x%llx", name, (unsigned long long)off);
+                    json_escape(f, tmp);
+                } else {
+                    char tmp[32];
+                    snprintf(tmp, sizeof(tmp), "0x%llx", (unsigned long long)frames[j]);
+                    json_escape(f, tmp);
+                }
+            }
+        }
+    }
+    fprintf(f, "]\n  }");
+}
+
 int dot_generate(struct dep_graph *g, const char *path,
-                 u32 min_count, u64 min_ns)
+                 u32 min_count, u64 min_ns,
+                 struct bt_reader *r, struct ksym_table *kt)
 {
     FILE *f = fopen(path, "w");
     if (!f) return -1;
@@ -229,25 +318,72 @@ int dot_generate(struct dep_graph *g, const char *path,
         format_duration(e->total_ns, dur, sizeof(dur));
 
         char from_id[64], to_id[64];
+        char from_label[80], to_label[80];
 
-        if (is_special_tid(e->from_tid))
+        if (is_special_tid(e->from_tid)) {
             snprintf(from_id, sizeof(from_id), "cat_%s", special_node_name(e->waker_cat));
-        else
+            snprintf(from_label, sizeof(from_label), "[%s]", special_node_name(e->waker_cat));
+        } else {
             snprintf(from_id, sizeof(from_id), "t%u", e->from_tid);
+            snprintf(from_label, sizeof(from_label), "%u %s", e->from_tid, e->from_comm);
+        }
 
-        if (is_special_tid(e->to_tid))
+        if (is_special_tid(e->to_tid)) {
             snprintf(to_id, sizeof(to_id), "cat_%s", special_node_name(e->waker_cat));
-        else
+            snprintf(to_label, sizeof(to_label), "[%s]", special_node_name(e->waker_cat));
+        } else {
             snprintf(to_id, sizeof(to_id), "t%u", e->to_tid);
+            snprintf(to_label, sizeof(to_label), "%u %s", e->to_tid, e->to_comm);
+        }
 
-        fprintf(f, "  %s -> %s [label=\"%s\\n%s, %ux\" color=%s];\n",
+        char tooltip[256];
+        if (is_special_tid(e->to_tid))
+            snprintf(tooltip, sizeof(tooltip), "%u %s -> [%s] | %s %s, %ux",
+                     e->from_tid, e->from_comm,
+                     special_node_name(e->waker_cat),
+                     block_cat_name(e->block_cat), dur, e->count);
+        else
+            snprintf(tooltip, sizeof(tooltip), "%u %s -> %u %s | %s %s, %ux",
+                     e->from_tid, e->from_comm,
+                     e->to_tid, e->to_comm,
+                     block_cat_name(e->block_cat), dur, e->count);
+
+        fprintf(f, "  %s -> %s [label=\"%s\\n%s, %ux\" color=%s "
+                   "edgeid=\"e%d\" tooltip=\"%s\"];\n",
                 from_id, to_id,
                 block_cat_name(e->block_cat), dur, e->count,
-                edge_color(e->waker_cat));
+                edge_color(e->waker_cat),
+                used[k], tooltip);
     }
 
     fprintf(f, "}\n");
     fclose(f);
+
+    /* write _stacks.json sidecar */
+    char jsonpath[512];
+    snprintf(jsonpath, sizeof(jsonpath), "%s", path);
+    char *dot_ext = strstr(jsonpath, ".dot");
+    if (dot_ext)
+        memcpy(dot_ext, "_stacks.json", 13);
+    else
+        snprintf(jsonpath + strlen(jsonpath), sizeof(jsonpath) - strlen(jsonpath),
+                 "_stacks.json");
+
+    FILE *jf = fopen(jsonpath, "w");
+    if (jf) {
+        fprintf(jf, "{\n");
+        int first = 1;
+        for (int k = 0; k < nused; k++) {
+            if (!first) fprintf(jf, ",\n");
+            first = 0;
+            write_edge_stacks(jf, g->edges + used[k], used[k], r, kt);
+        }
+        fprintf(jf, "\n}\n");
+        fclose(jf);
+        if (nused > 0)
+            fprintf(stderr, "Stack data written to %s\n", jsonpath);
+    }
+
     free(used);
     free(seen_tids);
     free(cc);

@@ -309,7 +309,9 @@ int report_main(int argc, char **argv)
             }
 
             dep_graph_add(&graph, bw->blocked_tid, waker_tid,
-                          bcat, wcat, dur, bw->blocked_comm, waker_comm);
+                          bcat, wcat, dur,
+                          bw->blocked_kstack_id, bw->waker_kstack_id,
+                          bw->blocked_comm, waker_comm);
         }
     }
 
@@ -393,7 +395,7 @@ int report_main(int argc, char **argv)
     if (gen_dot) {
         char dotpath[512];
         snprintf(dotpath, sizeof(dotpath), "%s/btrace.dot", outdir);
-        if (dot_generate(&graph, dotpath, min_count, min_ns) == 0)
+        if (dot_generate(&graph, dotpath, min_count, min_ns, r, &kt) == 0)
             fprintf(stderr, "DOT graph written to %s\n", dotpath);
         else
             fprintf(stderr, "Error writing DOT graph\n");
