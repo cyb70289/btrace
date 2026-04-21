@@ -1,0 +1,19 @@
+Develop a tool "btrace" to profile threads block/wakeup timings and relationships of a complex workload with multithreading and disk, network IO.
+
+As an example, think about mysql server. There are tens of threads work together to get job done. E.g., connection threads handle client requests and often the main target for profiling. Log writer thread writes WAL to disk. IO threads are reponsible for flushing WAL to data files asynchronously. And many other threads. These threads have tricky and dynamic dependencies, often some threads must wait others, or wait for disk/network IO. There is very useful info for performance profiling but very hard to collect, analyze and leverage.
+
+Requirements:
+- btrace runs on Linux (debug your code on this server)
+- Like perf, btrace shall support "record" and "report". "record" profiles a process and save result to a file. "report" analyze the save file and show insights with text report and visualize in dot format
+- Do not use uprobe which may impose too much overhead to profiled process. Use eBPF (or other tech with low overhead) to profile only the thread block and wakeup events, together with user/kernel call stacks to reveal both the thread and code(e.g., function name, source line) that leads to block/wakeup. Can specify stack depth in "record" command line (default=8).
+- "record" runtime overhead shall be as small as possible. Leave most work to "report", or defer to "record" finishes
+- Visualization shall reveal the block/wakeup relations of all threads easy to understand. Eg, total time threadA blocks threadB over the profile duration, the time threadC waits for disk or network IO, the time threadD wait in epoll, etc.
+- More detailed info can be extracted from the record data, eg., user call stack, the syscall leads to blocking, etc.
+- Design cases for quick verification, eg, mutex, conditional variable, disk IO, blocking net read, epoll. Also verify e2e with mysql, using percona/percona-server:8.0 docker image for quick deloyment. Maximal 8 threads for test.
+
+Notes:
+- Please include other thread blocking events I missed but is useful in practice.
+- Think carefully what information you need to capture to rebuild the thread relation, with low impaction to profiled process
+- Only care about voluntary context switch due to blocking, ignore involuntary context switches, and possible irrelevant async sched events happen in profiled thread's context
+
+Please dive deep the feasibility and approach. Propose a clear design document, and evaluate possible risks. Think very carefully, this is a very challenging project. There are many unknown and vague areas to me.

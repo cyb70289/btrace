@@ -1,0 +1,30 @@
+# Build artifacts
+*.o
+*.skel.h
+btrace
+
+# Record output
+*.btrace
+
+# Test binaries
+test_mutex
+test_condvar
+test_disk_io
+test_net_read
+test_epoll
+
+# Editor / IDE
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Opencode
+opencode.json
+
+# Temporary test files
+/tmp/
