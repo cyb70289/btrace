@@ -25,6 +25,7 @@ void dep_graph_add(struct dep_graph *g, u32 from_tid, u32 to_tid,
                    int block_cat, int waker_cat, u64 duration_ns,
                    const char *from_comm, const char *to_comm);
 void dep_graph_free(struct dep_graph *g);
-int dot_generate(struct dep_graph *g, const char *path);
+int dot_generate(struct dep_graph *g, const char *path,
+                 u32 min_count, u64 min_ns);
 
 #endif

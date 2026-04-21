@@ -84,10 +84,26 @@ static void format_duration(u64 ns, char *buf, size_t bufsz)
         snprintf(buf, bufsz, "%.2fs", (double)ns / 1e9);
 }
 
-int dot_generate(struct dep_graph *g, const char *path)
+int dot_generate(struct dep_graph *g, const char *path,
+                 u32 min_count, u64 min_ns)
 {
     FILE *f = fopen(path, "w");
     if (!f) return -1;
+
+    int *used = calloc(g->edge_count, sizeof(int));
+    int nused = 0;
+    for (int i = 0; i < g->edge_count; i++) {
+        struct dep_edge *e = &g->edges[i];
+        if (e->count >= min_count && e->total_ns >= min_ns)
+            used[nused++] = i;
+    }
+
+    if (nused == 0) {
+        fprintf(f, "digraph btrace {\n  rankdir=LR;\n  label=\"no edges above threshold\";\n}\n");
+        fclose(f);
+        free(used);
+        return 0;
+    }
 
     fprintf(f, "digraph btrace {\n");
     fprintf(f, "  rankdir=LR;\n");
@@ -97,8 +113,8 @@ int dot_generate(struct dep_graph *g, const char *path)
     u32 *seen_tids = NULL;
     int seen_count = 0, seen_cap = 0;
 
-    for (int i = 0; i < g->edge_count; i++) {
-        struct dep_edge *e = &g->edges[i];
+    for (int k = 0; k < nused; k++) {
+        struct dep_edge *e = &g->edges[used[k]];
 
         if (!is_special_tid(e->from_tid)) {
             int found = 0;
@@ -133,8 +149,8 @@ int dot_generate(struct dep_graph *g, const char *path)
 
     int seen_cats = 0;
     int cat_seen[8] = {};
-    for (int i = 0; i < g->edge_count; i++) {
-        struct dep_edge *e = &g->edges[i];
+    for (int k = 0; k < nused; k++) {
+        struct dep_edge *e = &g->edges[used[k]];
         if (is_special_tid(e->to_tid)) {
             int found = 0;
             for (int j = 0; j < seen_cats; j++)
@@ -150,8 +166,8 @@ int dot_generate(struct dep_graph *g, const char *path)
 
     fprintf(f, "\n");
 
-    for (int i = 0; i < g->edge_count; i++) {
-        struct dep_edge *e = &g->edges[i];
+    for (int k = 0; k < nused; k++) {
+        struct dep_edge *e = &g->edges[used[k]];
         char dur[32];
         format_duration(e->total_ns, dur, sizeof(dur));
 
@@ -167,7 +183,7 @@ int dot_generate(struct dep_graph *g, const char *path)
         else
             snprintf(to_id, sizeof(to_id), "t%u", e->to_tid);
 
-        fprintf(f, "  %s -> %s [label=\"%s\\n%s\\n%ux\" color=%s];\n",
+        fprintf(f, "  %s -> %s [label=\"%s\\n%s, %ux\" color=%s];\n",
                 from_id, to_id,
                 block_cat_name(e->block_cat), dur, e->count,
                 edge_color(e->waker_cat));
@@ -175,6 +191,7 @@ int dot_generate(struct dep_graph *g, const char *path)
 
     fprintf(f, "}\n");
     fclose(f);
+    free(used);
     free(seen_tids);
     return 0;
 }

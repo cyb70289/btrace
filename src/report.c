@@ -150,22 +150,29 @@ int report_main(int argc, char **argv)
     const char *input = NULL;
     const char *outdir = ".";
     int gen_dot = 0;
+    u32 min_count = 10;
+    u64 min_ns = 1000000ULL;
 
     static struct option long_opts[] = {
-        {"input",  required_argument, NULL, 'i'},
-        {"output", required_argument, NULL, 'o'},
-        {"dot",    no_argument,       NULL, 'D'},
+        {"input",      required_argument, NULL, 'i'},
+        {"output",     required_argument, NULL, 'o'},
+        {"dot",        no_argument,       NULL, 'D'},
+        {"min-count",  required_argument, NULL, 'c'},
+        {"min-time",   required_argument, NULL, 't'},
         {NULL, 0, NULL, 0}
     };
 
     int c;
-    while ((c = getopt_long(argc, argv, "i:o:D", long_opts, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "i:o:Dc:t:", long_opts, NULL)) != -1) {
         switch (c) {
         case 'i': input = optarg; break;
         case 'o': outdir = optarg; break;
         case 'D': gen_dot = 1; break;
+        case 'c': min_count = (u32)atoi(optarg); break;
+        case 't': min_ns = (u64)atol(optarg) * 1000000ULL; break;
         default:
-            fprintf(stderr, "Usage: btrace report -i <file> [-o <dir>] [--dot]\n");
+            fprintf(stderr, "Usage: btrace report -i <file> [-o <dir>] [--dot] "
+                    "[--min-count N] [--min-time Ms]\n");
             return 1;
         }
     }
@@ -386,7 +393,7 @@ int report_main(int argc, char **argv)
     if (gen_dot) {
         char dotpath[512];
         snprintf(dotpath, sizeof(dotpath), "%s/btrace.dot", outdir);
-        if (dot_generate(&graph, dotpath) == 0)
+        if (dot_generate(&graph, dotpath, min_count, min_ns) == 0)
             fprintf(stderr, "DOT graph written to %s\n", dotpath);
         else
             fprintf(stderr, "Error writing DOT graph\n");
