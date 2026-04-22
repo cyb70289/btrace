@@ -229,9 +229,10 @@ function showModal(edgeid) {
         var d = document.createElement('div'); d.className = 'frame';
         if (typeof f === 'object' && f.s) {
             d.textContent = f.s;
-            if (f.src) d.title = f.src;
+            d.title = f.src ? (f.s + '\n' + f.src) : f.s;
         } else {
             d.textContent = f;
+            d.title = f;
         }
         el.appendChild(d);
     }
