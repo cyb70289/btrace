@@ -103,6 +103,12 @@ static int load_symtab(Elf *elf, struct sym_table *st, int is_64)
 
 struct sym_table *sym_load_elf(const char *path)
 {
+    static int elf_initialized = 0;
+    if (!elf_initialized) {
+        elf_version(EV_CURRENT);
+        elf_initialized = 1;
+    }
+
     int fd = open(path, O_RDONLY);
     if (fd < 0) return NULL;
 
@@ -293,6 +299,12 @@ int maps_find(struct maps_parse *mp, u64 addr, struct maps_entry *out)
     return -1;
 }
 
+static const char *base_name(const char *path)
+{
+    const char *p = strrchr(path, '/');
+    return p ? p + 1 : path;
+}
+
 const char *sym_resolve_user(struct sym_cache *sc, struct maps_parse *mp,
                              u64 addr, char *buf, size_t bufsz)
 {
@@ -302,9 +314,10 @@ const char *sym_resolve_user(struct sym_cache *sc, struct maps_parse *mp,
         return buf;
     }
 
+    const char *bname = base_name(me.path);
     struct sym_table *st = get_or_load(sc, me.path);
     if (!st) {
-        snprintf(buf, bufsz, "%s+0x%lx", me.path,
+        snprintf(buf, bufsz, "%s+0x%lx", bname,
                  (unsigned long)(addr - me.start + me.offset));
         return buf;
     }
@@ -313,9 +326,53 @@ const char *sym_resolve_user(struct sym_cache *sc, struct maps_parse *mp,
     u64 off;
     const char *name = sym_lookup_table(st, file_addr, &off);
     if (name)
-        snprintf(buf, bufsz, "%s+0x%lx", name, (unsigned long)off);
+        snprintf(buf, bufsz, "%s:%s+0x%lx", bname, name, (unsigned long)off);
     else
-        snprintf(buf, bufsz, "%s+0x%lx", me.path, (unsigned long)file_addr);
+        snprintf(buf, bufsz, "%s+0x%lx", bname, (unsigned long)file_addr);
+
+    return buf;
+}
+
+const char *sym_resolve_user_src(struct sym_cache *sc, struct maps_parse *mp,
+                                 u64 addr, char *buf, size_t bufsz,
+                                 char *src, size_t srcsz)
+{
+    struct maps_entry me;
+    if (maps_find(mp, addr, &me) < 0) {
+        snprintf(buf, bufsz, "0x%lx", (unsigned long)addr);
+        src[0] = '\0';
+        return buf;
+    }
+
+    const char *bname = base_name(me.path);
+    struct sym_table *st = get_or_load(sc, me.path);
+    u64 file_addr = addr - me.start + me.offset;
+
+    if (!st) {
+        snprintf(buf, bufsz, "%s+0x%lx", bname, (unsigned long)file_addr);
+        src[0] = '\0';
+        return buf;
+    }
+
+    u64 off;
+    const char *name = sym_lookup_table(st, file_addr, &off);
+    if (name)
+        snprintf(buf, bufsz, "%s:%s+0x%lx", bname, name, (unsigned long)off);
+    else
+        snprintf(buf, bufsz, "%s+0x%lx", bname, (unsigned long)file_addr);
+
+    char afunc[256], afile[256];
+    int aline;
+    if (sym_resolve_source(me.path, file_addr, afunc, sizeof(afunc),
+                           afile, sizeof(afile), &aline) == 0) {
+        const char *afbase = base_name(afile);
+        if (aline > 0)
+            snprintf(src, srcsz, "%s:%d", afbase, aline);
+        else
+            snprintf(src, srcsz, "%s", afbase);
+    } else {
+        src[0] = '\0';
+    }
 
     return buf;
 }

@@ -50,7 +50,7 @@ btrace: $(OBJS)
 	$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) -o $@
 
 tests/cases/%: tests/cases/%.c
-	$(CC) -Wall -O2 -pthread -o $@ $<
+	$(CC) -Wall -O2 -g -pthread -o $@ $<
 
 test-cases: $(TEST_BINS)
 

@@ -207,41 +207,41 @@ function showModal(edgeid) {
         '<span>' + data.waker_cat + '</span>' +
         '<span>' + data.duration + '</span>' +
         '<span>' + data.count + ' samples</span>';
+
+    function renderFrame(el, f) {
+        var d = document.createElement('div'); d.className = 'frame';
+        if (typeof f === 'object' && f.s) {
+            d.textContent = f.s;
+            if (f.src) d.title = f.src;
+        } else {
+            d.textContent = f;
+        }
+        el.appendChild(d);
+    }
+
     const bf = document.getElementById('blocked-frames');
     bf.innerHTML = '';
     if (data.blocked_stack && data.blocked_stack.length) {
         var lbl = document.createElement('div'); lbl.className = 'stack-section-label'; lbl.textContent = 'kernel';
         bf.appendChild(lbl);
-        data.blocked_stack.forEach(function(s) {
-            var d = document.createElement('div'); d.className = 'frame'; d.textContent = s;
-            bf.appendChild(d);
-        });
+        data.blocked_stack.forEach(function(s) { renderFrame(bf, s); });
     }
     if (data.blocked_user_stack && data.blocked_user_stack.length) {
         var lbl = document.createElement('div'); lbl.className = 'stack-section-label'; lbl.textContent = 'user';
         bf.appendChild(lbl);
-        data.blocked_user_stack.forEach(function(s) {
-            var d = document.createElement('div'); d.className = 'frame'; d.textContent = s;
-            bf.appendChild(d);
-        });
+        data.blocked_user_stack.forEach(function(s) { renderFrame(bf, s); });
     }
     const wf = document.getElementById('waker-frames');
     wf.innerHTML = '';
     if (data.waker_stack && data.waker_stack.length) {
         var lbl = document.createElement('div'); lbl.className = 'stack-section-label'; lbl.textContent = 'kernel';
         wf.appendChild(lbl);
-        data.waker_stack.forEach(function(s) {
-            var d = document.createElement('div'); d.className = 'frame'; d.textContent = s;
-            wf.appendChild(d);
-        });
+        data.waker_stack.forEach(function(s) { renderFrame(wf, s); });
     }
     if (data.waker_user_stack && data.waker_user_stack.length) {
         var lbl = document.createElement('div'); lbl.className = 'stack-section-label'; lbl.textContent = 'user';
         wf.appendChild(lbl);
-        data.waker_user_stack.forEach(function(s) {
-            var d = document.createElement('div'); d.className = 'frame'; d.textContent = s;
-            wf.appendChild(d);
-        });
+        data.waker_user_stack.forEach(function(s) { renderFrame(wf, s); });
     }
     document.getElementById('modal-overlay').classList.add('active');
 }

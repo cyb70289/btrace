@@ -181,16 +181,29 @@ static void write_stack_frames(FILE *f, struct bt_reader *r, int stack_id,
         if (name) {
             char tmp[128];
             snprintf(tmp, sizeof(tmp), "%s+0x%llx", name, (unsigned long long)off);
+            fprintf(f, "{\"s\":");
             json_escape(f, tmp);
+            fprintf(f, "}");
         } else {
-            char ubuf[256];
-            const char *uname = sym_resolve_user(sc, mp, frames[j], ubuf, sizeof(ubuf));
+            char ubuf[256], srcbuf[256];
+            srcbuf[0] = '\0';
+            const char *uname = sym_resolve_user_src(sc, mp, frames[j],
+                                                     ubuf, sizeof(ubuf),
+                                                     srcbuf, sizeof(srcbuf));
             if (uname) {
+                fprintf(f, "{\"s\":");
                 json_escape(f, uname);
+                if (srcbuf[0]) {
+                    fprintf(f, ",\"src\":");
+                    json_escape(f, srcbuf);
+                }
+                fprintf(f, "}");
             } else {
                 char tmp[32];
                 snprintf(tmp, sizeof(tmp), "0x%llx", (unsigned long long)frames[j]);
+                fprintf(f, "{\"s\":");
                 json_escape(f, tmp);
+                fprintf(f, "}");
             }
         }
     }

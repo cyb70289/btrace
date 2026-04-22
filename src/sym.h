@@ -56,6 +56,9 @@ int maps_find(struct maps_parse *mp, u64 addr, struct maps_entry *out);
 
 const char *sym_resolve_user(struct sym_cache *sc, struct maps_parse *mp,
                              u64 addr, char *buf, size_t bufsz);
+const char *sym_resolve_user_src(struct sym_cache *sc, struct maps_parse *mp,
+                                 u64 addr, char *buf, size_t bufsz,
+                                 char *src, size_t srcsz);
 int sym_resolve_source(const char *binary, u64 addr, char *func, size_t funcsz,
                        char *file, size_t filesz, int *line);
 
