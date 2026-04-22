@@ -162,6 +162,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 }
 .stack-frames .frame:nth-child(odd) { background: #f5f5f5; }
 .stack-frames .frame:first-child { font-weight: 600; }
+.stack-section-label {
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    color: #aaa; padding: 4px 10px 2px; letter-spacing: 0.3px;
+}
+.stack-section-label:not(:first-child) { border-top: 1px solid #e0e0e0; margin-top: 4px; padding-top: 6px; }
 </style>
 </head>
 <body>
@@ -178,11 +183,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
   <div id="modal-meta"></div>
   <div id="stacks-container">
     <div class="stack-col blocked">
-      <h4>Blocked stack (waiter)</h4>
+      <h4>Blocked (waiter)</h4>
       <div class="stack-frames" id="blocked-frames"></div>
     </div>
     <div class="stack-col waker">
-      <h4>Waker stack (blocker)</h4>
+      <h4>Waker (blocker)</h4>
       <div class="stack-frames" id="waker-frames"></div>
     </div>
   </div>
@@ -204,20 +209,40 @@ function showModal(edgeid) {
         '<span>' + data.count + ' samples</span>';
     const bf = document.getElementById('blocked-frames');
     bf.innerHTML = '';
-    (data.blocked_stack || []).forEach(function(s) {
-        const d = document.createElement('div');
-        d.className = 'frame';
-        d.textContent = s;
-        bf.appendChild(d);
-    });
+    if (data.blocked_stack && data.blocked_stack.length) {
+        var lbl = document.createElement('div'); lbl.className = 'stack-section-label'; lbl.textContent = 'kernel';
+        bf.appendChild(lbl);
+        data.blocked_stack.forEach(function(s) {
+            var d = document.createElement('div'); d.className = 'frame'; d.textContent = s;
+            bf.appendChild(d);
+        });
+    }
+    if (data.blocked_user_stack && data.blocked_user_stack.length) {
+        var lbl = document.createElement('div'); lbl.className = 'stack-section-label'; lbl.textContent = 'user';
+        bf.appendChild(lbl);
+        data.blocked_user_stack.forEach(function(s) {
+            var d = document.createElement('div'); d.className = 'frame'; d.textContent = s;
+            bf.appendChild(d);
+        });
+    }
     const wf = document.getElementById('waker-frames');
     wf.innerHTML = '';
-    (data.waker_stack || []).forEach(function(s) {
-        const d = document.createElement('div');
-        d.className = 'frame';
-        d.textContent = s;
-        wf.appendChild(d);
-    });
+    if (data.waker_stack && data.waker_stack.length) {
+        var lbl = document.createElement('div'); lbl.className = 'stack-section-label'; lbl.textContent = 'kernel';
+        wf.appendChild(lbl);
+        data.waker_stack.forEach(function(s) {
+            var d = document.createElement('div'); d.className = 'frame'; d.textContent = s;
+            wf.appendChild(d);
+        });
+    }
+    if (data.waker_user_stack && data.waker_user_stack.length) {
+        var lbl = document.createElement('div'); lbl.className = 'stack-section-label'; lbl.textContent = 'user';
+        wf.appendChild(lbl);
+        data.waker_user_stack.forEach(function(s) {
+            var d = document.createElement('div'); d.className = 'frame'; d.textContent = s;
+            wf.appendChild(d);
+        });
+    }
     document.getElementById('modal-overlay').classList.add('active');
 }
 

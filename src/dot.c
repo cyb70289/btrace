@@ -75,7 +75,8 @@ void dep_graph_init(struct dep_graph *g)
 
 void dep_graph_add(struct dep_graph *g, u32 from_tid, u32 to_tid,
                    int block_cat, int waker_cat, u64 duration_ns,
-                   int blocked_kstack_id, int waker_kstack_id,
+                   int blocked_kstack_id, int blocked_ustack_id,
+                   int waker_kstack_id, int waker_ustack_id,
                    const char *from_comm, const char *to_comm)
 {
     for (int i = 0; i < g->edge_count; i++) {
@@ -86,8 +87,12 @@ void dep_graph_add(struct dep_graph *g, u32 from_tid, u32 to_tid,
             e->count++;
             if (blocked_kstack_id >= 0)
                 e->blocked_kstack_id = blocked_kstack_id;
+            if (blocked_ustack_id >= 0)
+                e->blocked_ustack_id = blocked_ustack_id;
             if (waker_kstack_id >= 0)
                 e->waker_kstack_id = waker_kstack_id;
+            if (waker_ustack_id >= 0)
+                e->waker_ustack_id = waker_ustack_id;
             return;
         }
     }
@@ -105,7 +110,9 @@ void dep_graph_add(struct dep_graph *g, u32 from_tid, u32 to_tid,
     e->total_ns = duration_ns;
     e->count = 1;
     e->blocked_kstack_id = blocked_kstack_id;
+    e->blocked_ustack_id = blocked_ustack_id;
     e->waker_kstack_id = waker_kstack_id;
+    e->waker_ustack_id = waker_ustack_id;
     strncpy(e->from_comm, from_comm, COMM_LEN - 1);
     strncpy(e->to_comm, to_comm, COMM_LEN - 1);
 }
@@ -157,8 +164,41 @@ static void json_escape(FILE *f, const char *s)
     fputc('"', f);
 }
 
+static void write_stack_frames(FILE *f, struct bt_reader *r, int stack_id,
+                               struct ksym_table *kt,
+                               struct sym_cache *sc, struct maps_parse *mp,
+                               int max_frames)
+{
+    if (!r || stack_id < 0) return;
+    u64 *frames = NULL;
+    int nframes = 0;
+    if (bt_reader_get_stack(r, stack_id, &frames, &nframes) != 0) return;
+
+    for (int j = 0; j < nframes && j < max_frames; j++) {
+        if (j) fprintf(f, ", ");
+        u64 off;
+        const char *name = ksym_lookup(kt, frames[j], &off);
+        if (name) {
+            char tmp[128];
+            snprintf(tmp, sizeof(tmp), "%s+0x%llx", name, (unsigned long long)off);
+            json_escape(f, tmp);
+        } else {
+            char ubuf[256];
+            const char *uname = sym_resolve_user(sc, mp, frames[j], ubuf, sizeof(ubuf));
+            if (uname) {
+                json_escape(f, uname);
+            } else {
+                char tmp[32];
+                snprintf(tmp, sizeof(tmp), "0x%llx", (unsigned long long)frames[j]);
+                json_escape(f, tmp);
+            }
+        }
+    }
+}
+
 static void write_edge_stacks(FILE *f, struct dep_edge *e, int edge_idx,
-                              struct bt_reader *r, struct ksym_table *kt)
+                               struct bt_reader *r, struct ksym_table *kt,
+                               struct sym_cache *sc, struct maps_parse *mp)
 {
     fprintf(f, "  \"e%d\": {\n", edge_idx);
     fprintf(f, "    \"from\": \"%u (%s)\",\n", e->from_tid, e->from_comm);
@@ -177,55 +217,26 @@ static void write_edge_stacks(FILE *f, struct dep_edge *e, int edge_idx,
     fprintf(f, "    \"count\": %u,\n", e->count);
 
     fprintf(f, "    \"blocked_stack\": [");
-    if (r && e->blocked_kstack_id >= 0) {
-        u64 *frames = NULL;
-        int nframes = 0;
-        if (bt_reader_get_stack(r, e->blocked_kstack_id, &frames, &nframes) == 0) {
-            for (int j = 0; j < nframes && j < 12; j++) {
-                if (j) fprintf(f, ", ");
-                u64 off;
-                const char *name = ksym_lookup(kt, frames[j], &off);
-                if (name) {
-                    char tmp[128];
-                    snprintf(tmp, sizeof(tmp), "%s+0x%llx", name, (unsigned long long)off);
-                    json_escape(f, tmp);
-                } else {
-                    char tmp[32];
-                    snprintf(tmp, sizeof(tmp), "0x%llx", (unsigned long long)frames[j]);
-                    json_escape(f, tmp);
-                }
-            }
-        }
-    }
+    write_stack_frames(f, r, e->blocked_kstack_id, kt, sc, mp, 12);
+    fprintf(f, "],\n");
+
+    fprintf(f, "    \"blocked_user_stack\": [");
+    write_stack_frames(f, r, e->blocked_ustack_id, kt, sc, mp, 12);
     fprintf(f, "],\n");
 
     fprintf(f, "    \"waker_stack\": [");
-    if (r && e->waker_kstack_id >= 0) {
-        u64 *frames = NULL;
-        int nframes = 0;
-        if (bt_reader_get_stack(r, e->waker_kstack_id, &frames, &nframes) == 0) {
-            for (int j = 0; j < nframes && j < 12; j++) {
-                if (j) fprintf(f, ", ");
-                u64 off;
-                const char *name = ksym_lookup(kt, frames[j], &off);
-                if (name) {
-                    char tmp[128];
-                    snprintf(tmp, sizeof(tmp), "%s+0x%llx", name, (unsigned long long)off);
-                    json_escape(f, tmp);
-                } else {
-                    char tmp[32];
-                    snprintf(tmp, sizeof(tmp), "0x%llx", (unsigned long long)frames[j]);
-                    json_escape(f, tmp);
-                }
-            }
-        }
-    }
+    write_stack_frames(f, r, e->waker_kstack_id, kt, sc, mp, 12);
+    fprintf(f, "],\n");
+
+    fprintf(f, "    \"waker_user_stack\": [");
+    write_stack_frames(f, r, e->waker_ustack_id, kt, sc, mp, 12);
     fprintf(f, "]\n  }");
 }
 
 int dot_generate(struct dep_graph *g, const char *path,
                  u32 min_count, u64 min_ns,
-                 struct bt_reader *r, struct ksym_table *kt)
+                 struct bt_reader *r, struct ksym_table *kt,
+                 struct sym_cache *sc, struct maps_parse *mp)
 {
     FILE *f = fopen(path, "w");
     if (!f) return -1;
@@ -376,7 +387,7 @@ int dot_generate(struct dep_graph *g, const char *path,
         for (int k = 0; k < nused; k++) {
             if (!first) fprintf(jf, ",\n");
             first = 0;
-            write_edge_stacks(jf, g->edges + used[k], used[k], r, kt);
+            write_edge_stacks(jf, g->edges + used[k], used[k], r, kt, sc, mp);
         }
         fprintf(jf, "\n}\n");
         fclose(jf);

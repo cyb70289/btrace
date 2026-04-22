@@ -128,6 +128,7 @@ struct cat_stat {
 
 struct stack_stat {
     int kstack_id;
+    int ustack_id;
     u64 total_ns;
     u32 count;
     int block_cat;
@@ -278,6 +279,7 @@ int report_main(int argc, char **argv)
                 if (si < 0 && nsstats < max_stacks) {
                     si = nsstats++;
                     sstats[si].kstack_id = bw->blocked_kstack_id;
+                    sstats[si].ustack_id = bw->blocked_ustack_id;
                     sstats[si].block_cat = bcat;
                 }
                 if (si >= 0) {
@@ -310,7 +312,8 @@ int report_main(int argc, char **argv)
 
             dep_graph_add(&graph, bw->blocked_tid, waker_tid,
                           bcat, wcat, dur,
-                          bw->blocked_kstack_id, bw->waker_kstack_id,
+                          bw->blocked_kstack_id, bw->blocked_ustack_id,
+                          bw->waker_kstack_id, bw->waker_ustack_id,
                           bw->blocked_comm, waker_comm);
         }
     }
@@ -377,6 +380,7 @@ int report_main(int argc, char **argv)
             format_ns(ss->total_ns, dur_s, sizeof(dur_s));
             printf("\n  [%s] %s (%ux)\n", block_cat_name(ss->block_cat), dur_s, ss->count);
 
+            printf("    kernel:\n");
             u64 *frames = NULL;
             int nframes = 0;
             if (bt_reader_get_stack(r, ss->kstack_id, &frames, &nframes) == 0) {
@@ -384,9 +388,28 @@ int report_main(int argc, char **argv)
                     u64 off;
                     const char *name = ksym_lookup(&kt, frames[j], &off);
                     if (name)
-                        printf("    %s+0x%llx\n", name, (unsigned long long)off);
+                        printf("      %s+0x%llx\n", name, (unsigned long long)off);
                     else if (frames[j])
-                        printf("    0x%llx\n", (unsigned long long)frames[j]);
+                        printf("      0x%llx\n", (unsigned long long)frames[j]);
+                }
+            }
+
+            if (ss->ustack_id >= 0) {
+                printf("    user:\n");
+                frames = NULL;
+                nframes = 0;
+                if (bt_reader_get_stack(r, ss->ustack_id, &frames, &nframes) == 0) {
+                    char ubuf[256];
+                    for (int j = 0; j < nframes && j < 12; j++) {
+                        u64 off;
+                        const char *kname = ksym_lookup(&kt, frames[j], &off);
+                        if (kname) continue;
+                        const char *uname = sym_resolve_user(&sc, &mp, frames[j], ubuf, sizeof(ubuf));
+                        if (uname)
+                            printf("      %s\n", uname);
+                        else if (frames[j])
+                            printf("      0x%llx\n", (unsigned long long)frames[j]);
+                    }
                 }
             }
         }
@@ -395,7 +418,7 @@ int report_main(int argc, char **argv)
     if (gen_dot) {
         char dotpath[512];
         snprintf(dotpath, sizeof(dotpath), "%s/btrace.dot", outdir);
-        if (dot_generate(&graph, dotpath, min_count, min_ns, r, &kt) == 0)
+        if (dot_generate(&graph, dotpath, min_count, min_ns, r, &kt, &sc, &mp) == 0)
             fprintf(stderr, "DOT graph written to %s\n", dotpath);
         else
             fprintf(stderr, "Error writing DOT graph\n");
