@@ -5,8 +5,8 @@
 #include <fcntl.h>
 #include <string.h>
 
-#define ITERS 50
-#define BUFSZ 4096
+#define ITERS 1024
+#define BUFSZ 65536
 
 static const char *tmpfile_path = "/tmp/btrace_test_io.dat";
 

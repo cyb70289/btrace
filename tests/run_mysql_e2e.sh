@@ -20,7 +20,7 @@ TABLES=4
 TABLE_SIZE=10000
 THREADS=4
 TIME=10
-OUT="./out"
+OUT="./out/mysql"
 BTRACE="./btrace"
 
 mkdir -p "$OUT"
@@ -118,9 +118,12 @@ main() {
     echo "[report] generating text + DOT report ..."
     sudo chown "$USER:$USER" "$btfile" 2>/dev/null || true
     "$BTRACE" report -i "$btfile" -o "$OUT" --dot \
-        > "$OUT/mysql.txt" 2>"$OUT/mysql.log"
+        > "$OUT/btrace.txt" 2>"$OUT/btrace.log"
+
     if [ -f "$OUT/btrace.dot" ]; then
-        mv "$OUT/btrace.dot" "$OUT/mysql.dot"
+        echo "[report] generating SVG + HTML ..."
+        dot -Tsvg "$OUT/btrace.dot" > "$OUT/btrace.svg" 2>/dev/null || true
+        python3 scripts/btrace2html.py "$OUT/btrace.dot" -o "$OUT/btrace.html" 2>/dev/null || true
     fi
 
     # ---- Cleanup ----

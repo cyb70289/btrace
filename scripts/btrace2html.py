@@ -88,7 +88,16 @@ def patch_svg(svg, stacks):
                     line = m.group(1) + f'data-edgeid="{eid}" ' + m.group(2) + '>'
         result.append(line)
         i += 1
-    return '\n'.join(result)
+
+    svg = '\n'.join(result)
+    svg = svg.replace('class="edge">', 'class="edge" style="pointer-events:all">')
+    svg = re.sub(r'(<path\s+fill=")none(".*?stroke=".*?")',
+                 r'\1transparent\2', svg)
+
+    svg = re.sub(r'<a\s+xlink:title="[^"]*">\s*', '', svg)
+    svg = re.sub(r'\s*</a>', '', svg)
+
+    return svg
 
 
 HTML_TEMPLATE = r"""<!DOCTYPE html>
@@ -185,7 +194,7 @@ const STACKS = {{STACKS_JSON}};
 
 function showModal(edgeid) {
     const data = STACKS[edgeid];
-    if (!data) return;
+    if (!data) { console.warn('No stack data for edgeid:', edgeid); return; }
     document.getElementById('modal-title').textContent =
         data.from + ' \u2192 ' + data.to;
     document.getElementById('modal-meta').innerHTML =
@@ -224,10 +233,9 @@ document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') hideModal();
 });
 
-document.querySelectorAll('.edge[data-edgeid]').forEach(function(g) {
-    g.addEventListener('click', function() {
-        showModal(g.getAttribute('data-edgeid'));
-    });
+document.getElementById('container').addEventListener('click', function(ev) {
+    var g = ev.target.closest('.edge[data-edgeid]');
+    if (g) showModal(g.getAttribute('data-edgeid'));
 });
 </script>
 </body>
