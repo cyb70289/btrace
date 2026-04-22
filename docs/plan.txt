@@ -11,9 +11,12 @@ Requirements:
 - More detailed info can be extracted from the record data, eg., user call stack, the syscall leads to blocking, etc.
 - Design cases for quick verification, eg, mutex, conditional variable, disk IO, blocking net read, epoll. Also verify e2e with mysql, using percona/percona-server:8.0 docker image for quick deloyment. Maximal 8 threads for test.
 
-Notes:
-- Please include other thread blocking events I missed but is useful in practice.
+Note:
+- Please include other thead blocking events I missed but is useful in practice.
 - Think carefully what information you need to capture to rebuild the thread relation, with low impaction to profiled process
 - Only care about voluntary context switch due to blocking, ignore involuntary context switches, and possible irrelevant async sched events happen in profiled thread's context
+- The "record" shall be general, no hardcode for specific kernel, or test environment.
+- "report" can be flexible, given "record" saves enough info.
 
-Please dive deep the feasibility and approach. Propose a clear design document, and evaluate possible risks. Think very carefully, this is a very challenging project. There are many unknown and vague areas to me.
+Please dive deep the feasibility and approach, propose a clear design document, and evaluate possible risks. In your doc, explain clearly how to robustly identify threads blocking and wakeup relationships and calculate statistics.
+Think very carefully, this is a challenging project due to so many corner cases and vague area.
