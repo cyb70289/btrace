@@ -2,63 +2,40 @@
 #
 # btrace MySQL e2e showcase + overhead benchmark.
 #
-# - Starts a throwaway Percona Server 8.0 container.
+# - Uses host MySQL 8.0 (must be running).
 # - Prepares a sysbench OLTP dataset.
 # - Runs OLTP read-write workload twice: baseline, then with btrace attached.
 # - Reports TPS for both runs and btrace overhead %.
-# - Generates text + DOT report in ./out/.
+# - Generates text + DOT + SVG + HTML report in ./out/mysql/.
 #
-# Requires: docker, sysbench, sudo, btrace built at ./btrace.
+# Requires: mysql-server 8.0 running on host, sysbench, sudo, btrace built at ./btrace.
+#           For symbol resolution: mysql-server-core-8.0-dbgsym package installed.
 #
 
 set -uo pipefail
 
-CONTAINER="btrace-mysql"
-PORT=3307
-IMAGE="percona/percona-server:8.0"
+PORT=3306
 TABLES=4
 TABLE_SIZE=10000
 THREADS=4
 TIME=10
 OUT="./out/mysql"
 BTRACE="./btrace"
+MYSQL_USER="root"
+MYSQL_DB="sb"
 
 mkdir -p "$OUT"
 
 SB_COMMON=(
     /usr/share/sysbench/oltp_read_write.lua
     --mysql-host=127.0.0.1 --mysql-port="$PORT"
-    --mysql-user=root --mysql-password=root --mysql-db=sb
+    --mysql-user="$MYSQL_USER" --mysql-password=root --mysql-db="$MYSQL_DB"
     --tables="$TABLES" --table-size="$TABLE_SIZE"
     --threads="$THREADS" --time="$TIME" --report-interval=0
 )
 
-start_mysql() {
-    echo "[mysql] starting $IMAGE on port $PORT ..."
-    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-    docker run -d --name "$CONTAINER" \
-        -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=sb \
-        -p "${PORT}:3306" "$IMAGE" >/dev/null
-
-    echo "[mysql] waiting for mysqld ..."
-    for _ in $(seq 1 60); do
-        if docker exec "$CONTAINER" mysqladmin -uroot -proot ping 2>/dev/null \
-                | grep -q alive; then
-            echo "[mysql] ready"
-            return 0
-        fi
-        sleep 1
-    done
-    echo "[mysql] failed to start" >&2
-    exit 1
-}
-
-stop_mysql() {
-    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-}
-
-get_host_pid() {
-    docker inspect -f '{{.State.Pid}}' "$CONTAINER"
+get_mysqld_pid() {
+    pidof mysqld 2>/dev/null
 }
 
 bench() {
@@ -78,20 +55,26 @@ main() {
         exit 1
     fi
 
+    local pid
+    pid=$(get_mysqld_pid)
+    if [ -z "$pid" ]; then
+        echo "mysqld not running; start it with: sudo systemctl start mysql" >&2
+        exit 1
+    fi
+
     echo "========================================="
     echo " btrace MySQL e2e + overhead benchmark"
     echo "========================================="
+    echo " mysqld pid: $pid"
     echo " sysbench: $TABLES tables x $TABLE_SIZE rows, $THREADS threads, ${TIME}s"
     echo ""
 
-    # ---- Phase 0: start MySQL + prepare dataset ----
-    start_mysql
-    local pid
-    pid=$(get_host_pid)
-    echo "[mysql] host pid: $pid"
+    # ---- Phase 0: prepare dataset ----
+    mysql -h127.0.0.1 -P"$PORT" -u"$MYSQL_USER" -proot \
+        -e "CREATE DATABASE IF NOT EXISTS $MYSQL_DB;" 2>/dev/null || true
 
     echo "[sysbench] preparing dataset ..."
-    sysbench "${SB_COMMON[@]}" prepare >/dev/null
+    sysbench "${SB_COMMON[@]}" prepare 2>&1 | tail -3
 
     # ---- Phase 1: baseline (no btrace) ----
     echo ""
@@ -102,7 +85,7 @@ main() {
     # ---- Phase 2: with btrace profiling ----
     echo ""
     echo "[bench] === with btrace attached ==="
-    local btfile="$OUT/mysql.btrace"
+    local btfile="$OUT/btrace.btrace"
     sudo "$BTRACE" record -p "$pid" -d 8 -o "$btfile" >"$OUT/record.log" 2>&1 &
     local btpid=$!
     sleep 1
@@ -126,8 +109,23 @@ main() {
         python3 scripts/btrace2html.py "$OUT/btrace.dot" -o "$OUT/btrace.html" 2>/dev/null || true
     fi
 
+    # ---- Phase 4: verify symbol resolution ----
+    echo ""
+    echo "[verify] checking symbol resolution in report ..."
+    if grep -q 'mysqld:[a-zA-Z]' "$OUT/btrace_stacks.json" 2>/dev/null; then
+        local nsyms
+        nsyms=$(grep -oP 'mysqld:\K[a-zA-Z_][a-zA-Z0-9_:]*' "$OUT/btrace_stacks.json" 2>/dev/null | sort -u | wc -l)
+        echo "  OK: $nsyms unique mysqld function names resolved"
+        grep -oP 'mysqld:\K[a-zA-Z_][a-zA-Z0-9_:]*' "$OUT/btrace_stacks.json" 2>/dev/null | sort -u | head -5 | \
+            while read fn; do echo "    $fn"; done
+    else
+        echo "  WARN: no mysqld function names found (install mysql-server-core-8.0-dbgsym?)"
+    fi
+
     # ---- Cleanup ----
-    stop_mysql
+    echo ""
+    echo "[sysbench] cleaning up dataset ..."
+    sysbench "${SB_COMMON[@]}" cleanup >/dev/null 2>&1 || true
 
     # ---- Summary ----
     echo ""
