@@ -9,7 +9,7 @@ Requirements:
 - "record" runtime overhead shall be as small as possible. Leave most work to "report", or defer to "record" finishes
 - Visualization shall reveal the block/wakeup relations of all threads easy to understand. Eg, total time threadA blocks threadB over the profile duration, the time threadC waits for disk or network IO, the time threadD wait in epoll, etc.
 - More detailed info can be extracted from the record data, eg., user call stack, the syscall leads to blocking, etc.
-- Design cases for quick verification, eg, mutex, conditional variable, disk IO, blocking net read, epoll. Also verify e2e with mysql, using percona/percona-server:8.0 docker image for quick deloyment. Maximal 8 threads for test.
+- Design cases for quick verification, eg, mutex, conditional variable, disk IO, blocking net read, epoll. Also verify e2e with mysql (pre-installed and started on host). Maximal 8 threads for test.
 
 Note:
 - Please include other thead blocking events I missed but is useful in practice.

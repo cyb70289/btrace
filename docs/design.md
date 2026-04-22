@@ -311,30 +311,7 @@ digraph btrace {
 
 Edge colors: futex=red, disk_io=blue, network=green, epoll=orange, other=gray.
 
-## 9. Project Structure
-
-```
-src/
-  bpf/btrace.bpf.c       BPF program (tracepoint handlers)
-  include/btrace.h        Shared structs, constants, event definitions
-  main.c                  CLI entry, subcommand dispatch
-  record.c                record subcommand
-  report.c                report subcommand
-  storage.c               .btrace file I/O
-  sym.c                   Symbol resolution (ELF + kallsyms + addr2line)
-  dot.c                   DOT graph generation
-tests/
-  cases/test_mutex.c      Mutex contention workload
-  cases/test_condvar.c    Condvar wait/signal workload
-  cases/test_disk_io.c    Disk IO blocking workload
-  cases/test_net_read.c   Blocking network read workload
-  cases/test_epoll.c      Epoll wait workload
-  run_test.sh             Test runner
-  test_mysql.sh           MySQL e2e test (percona-server:8.0 Docker)
-Makefile
-```
-
-## 10. Test Workloads
+## 9. Test Workloads
 
 Five test cases covering the key blocking patterns, each generating verifiable
 block/wakeup relationships:
@@ -347,30 +324,16 @@ block/wakeup relationships:
 | `test_net_read` | blocking recv on socket | TASK_INTERRUPTIBLE block, waker = `[net_rx]` |
 | `test_epoll` | epoll_wait on timerfd | TASK_INTERRUPTIBLE block, waker = `[timer]` |
 
-All tests use max 8 threads. MySQL e2e uses `percona/percona-server:8.0` Docker image
+All tests use max 8 threads. MySQL e2e uses mysql server running on host
 with sysbench OLTP workload.
 
-## 11. Risks & Mitigations
+## 10. Risks & Mitigations
 
 | Risk | Mitigation |
 |---|---|
 | Waker misidentification for IO completions (common_pid = random task) | Kernel stack heuristic: if waker stack shows IRQ/softirq → use `[disk_io]`/`[net_rx]` special node |
 | Lost perf events under high load | 4MB+ per-CPU perf buffer; report dropped count; user can increase buffer |
 | Kernel stack unavailable (no frame pointers) | Check at startup; fall back to user stack; print warning |
-| Container PID namespace mismatch | Document host PID requirement; `docker top` for lookup |
 | Stripped binaries → no source lines | addr2line fails gracefully; fall back to .dynsym function names |
 | BPF map overflow | Use generous sizes (blocked_map=4096, stack_map=16384); report pressure |
 | sched_waking for already-runnable threads | blocked_map only contains blocked threads; lookup miss = ignore |
-
-## 12. Implementation Tasks
-
-1. **Project scaffolding** — Makefile, directory structure, shared headers, CLI skeleton
-2. **BPF program** — sched_switch + sched_waking + fork/exit handlers, maps, stack capture
-3. **Record tool** — BPF skeleton loading, perf buffer polling, event writing, metadata dump
-4. **Storage layer** — .btrace file format I/O (read + write), round-trip test
-5. **Symbol resolution** — ELF parsing via libelf, kallsyms parsing, addr2line integration
-6. **Text report** — Thread summary, blocking categorization, dependency graph, top stacks
-7. **DOT visualization** — Graph construction, DOT generation, color coding
-8. **Test workloads** — mutex, condvar, disk IO, net read, epoll (max 8 threads each)
-9. **MySQL e2e** — Docker deployment, sysbench load, verify thread relationships
-10. **Polish** — Error handling, edge cases, filtering flags, startup checks
