@@ -90,10 +90,6 @@ def patch_svg(svg, stacks):
         i += 1
 
     svg = '\n'.join(result)
-    svg = svg.replace('class="edge">', 'class="edge" style="pointer-events:all">')
-    svg = re.sub(r'(<path\s+fill=")none(".*?stroke=".*?")',
-                 r'\1transparent\2', svg)
-
     svg = re.sub(r'<a\s+xlink:title="[^"]*">\s*', '', svg)
     svg = re.sub(r'\s*</a>', '', svg)
 
@@ -113,7 +109,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 #container { max-width: 100%; overflow: auto; padding: 12px; }
 #container svg { max-width: 100%; height: auto; }
 #container svg .edge { cursor: pointer; }
-#container svg .edge:hover path { stroke-width: 3; }
+#container svg .edge:hover path:not(.hit-path) { stroke-width: 3; }
 #container svg .edge:hover polygon { stroke-width: 2; }
 #container svg text { user-select: none; }
 
@@ -196,6 +192,27 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 
 <script>
 const STACKS = {{STACKS_JSON}};
+
+(function() {
+    var svg = document.querySelector('#container svg');
+    if (!svg) return;
+    document.querySelectorAll('.edge[data-edgeid] path[stroke]').forEach(function(path) {
+        var fill = path.getAttribute('fill');
+        if (fill === 'none' || fill === 'transparent') {
+            path.setAttribute('pointer-events', 'none');
+            var hit = path.cloneNode(false);
+            hit.classList.add('hit-path');
+            hit.setAttribute('fill', 'none');
+            hit.setAttribute('stroke', 'transparent');
+            hit.setAttribute('stroke-width', '8');
+            hit.setAttribute('pointer-events', 'stroke');
+            hit.setAttribute('vector-effect', 'non-scaling-stroke');
+            hit.removeAttribute('id');
+            hit.removeAttribute('style');
+            path.parentNode.insertBefore(hit, path.nextSibling);
+        }
+    });
+})();
 
 function showModal(edgeid) {
     const data = STACKS[edgeid];
