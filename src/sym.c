@@ -191,8 +191,7 @@ struct sym_table *sym_load_elf(const char *path)
     elf_end(elf);
     close(fd);
 
-    if (st->count == 0)
-        load_debug_by_buildid(path, st);
+    load_debug_by_buildid(path, st);
 
     return st;
 }
