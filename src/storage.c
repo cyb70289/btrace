@@ -266,6 +266,17 @@ int bt_reader_load_stacks(struct bt_reader *r)
     }
 
     r->stack_count = (int)r->hdr.num_stacks;
+
+    r->stack_id_to_idx = calloc(MAX_STACK_MAP, sizeof(int));
+    if (r->stack_id_to_idx) {
+        size_t ip_off = 0;
+        for (int i = 0; i < r->stack_count; i++) {
+            int id = r->stack_entries[i].stack_id;
+            if (id >= 0 && id < MAX_STACK_MAP)
+                r->stack_id_to_idx[id] = (int)(ip_off + 1);
+            ip_off += r->stack_entries[i].num_frames;
+        }
+    }
     return 0;
 }
 
@@ -340,6 +351,19 @@ int bt_reader_get_stack(struct bt_reader *r, int stack_id, u64 **frames, int *nf
 {
     if (!r || stack_id < 0) return -1;
 
+    if (r->stack_id_to_idx && stack_id < MAX_STACK_MAP) {
+        int off = r->stack_id_to_idx[stack_id];
+        if (off > 0) {
+            for (int i = 0; i < r->stack_count; i++) {
+                if (r->stack_entries[i].stack_id == stack_id) {
+                    *frames = r->stack_ips + (off - 1);
+                    *nframes = (int)r->stack_entries[i].num_frames;
+                    return 0;
+                }
+            }
+        }
+    }
+
     size_t ip_off = 0;
     for (int i = 0; i < r->stack_count; i++) {
         if (r->stack_entries[i].stack_id == stack_id) {
@@ -358,6 +382,7 @@ void bt_reader_close(struct bt_reader *r)
     if (r->fp) fclose(r->fp);
     free(r->stack_ips);
     free(r->stack_entries);
+    free(r->stack_id_to_idx);
     free(r->threads);
     free(r->maps);
     free(r->kallsyms);

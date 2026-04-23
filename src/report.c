@@ -215,6 +215,11 @@ int report_main(int argc, char **argv)
     struct stack_stat *sstats = calloc(max_stacks, sizeof(*sstats));
     int nsstats = 0;
 
+    /* fast lookups */
+    int tid_map[4096];
+    for (int i = 0; i < 4096; i++) tid_map[i] = -1;
+    struct stack_stat **kstack_map = calloc(MAX_STACK_MAP, sizeof(*kstack_map));
+
     fseek(r->fp, (long)r->hdr.events_off, SEEK_SET);
     uint64_t total_bw = 0;
 
@@ -242,14 +247,23 @@ int report_main(int argc, char **argv)
             total_bw++;
 
             int tidx = -1;
-            for (int i = 0; i < ntstats; i++) {
-                if (tstats[i].tid == bw->blocked_tid) { tidx = i; break; }
-            }
-            if (tidx < 0 && ntstats < max_threads) {
-                tidx = ntstats++;
-                tstats[tidx].tid = bw->blocked_tid;
-                strncpy(tstats[tidx].comm, bw->blocked_comm, COMM_LEN);
-                tstats[tidx].min_ns = UINT64_MAX;
+            for (int h = (int)((bw->blocked_tid ^ (bw->blocked_tid >> 16)) & 4095);
+                 ; h = (h + 1) & 4095) {
+                int idx = tid_map[h];
+                if (idx == -1) {
+                    if (ntstats < max_threads) {
+                        tid_map[h] = ntstats;
+                        tidx = ntstats++;
+                        tstats[tidx].tid = bw->blocked_tid;
+                        strncpy(tstats[tidx].comm, bw->blocked_comm, COMM_LEN);
+                        tstats[tidx].min_ns = UINT64_MAX;
+                    }
+                    break;
+                }
+                if (tstats[idx].tid == bw->blocked_tid) {
+                    tidx = idx;
+                    break;
+                }
             }
             if (tidx >= 0) {
                 tstats[tidx].total_ns += dur;
@@ -272,19 +286,20 @@ int report_main(int argc, char **argv)
                                              knframes, kframes, ksyms);
 
             if (bw->blocked_kstack_id >= 0) {
-                int si = -1;
-                for (int i = 0; i < nsstats; i++) {
-                    if (sstats[i].kstack_id == bw->blocked_kstack_id) { si = i; break; }
+                struct stack_stat *ss = NULL;
+                if (bw->blocked_kstack_id < MAX_STACK_MAP)
+                    ss = kstack_map[bw->blocked_kstack_id];
+                if (!ss && nsstats < max_stacks) {
+                    ss = &sstats[nsstats++];
+                    if (bw->blocked_kstack_id < MAX_STACK_MAP)
+                        kstack_map[bw->blocked_kstack_id] = ss;
+                    ss->kstack_id = bw->blocked_kstack_id;
+                    ss->ustack_id = bw->blocked_ustack_id;
+                    ss->block_cat = bcat;
                 }
-                if (si < 0 && nsstats < max_stacks) {
-                    si = nsstats++;
-                    sstats[si].kstack_id = bw->blocked_kstack_id;
-                    sstats[si].ustack_id = bw->blocked_ustack_id;
-                    sstats[si].block_cat = bcat;
-                }
-                if (si >= 0) {
-                    sstats[si].total_ns += dur;
-                    sstats[si].count++;
+                if (ss) {
+                    ss->total_ns += dur;
+                    ss->count++;
                 }
             }
 
@@ -422,6 +437,7 @@ int report_main(int argc, char **argv)
             fprintf(stderr, "Error writing DOT graph\n");
     }
 
+    free(kstack_map);
     free(sstats);
     free(tstats);
     dep_graph_free(&graph);

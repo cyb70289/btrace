@@ -19,6 +19,7 @@ struct bt_reader {
     int thread_count;
     char *maps;
     char *kallsyms;
+    int *stack_id_to_idx;
 };
 
 struct bt_reader *bt_reader_open(const char *path);
