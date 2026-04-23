@@ -7,6 +7,7 @@
 #include <elf.h>
 #include <gelf.h>
 #include <sys/wait.h>
+#include <signal.h>
 
 void sym_cache_init(struct sym_cache *sc)
 {
@@ -433,8 +434,25 @@ static void demangle(const char *mangled, char *out, size_t outsz)
     fprintf(cplusfilt_in, "%s\n", mangled);
     fflush(cplusfilt_in);
 
-    if (!fgets(out, (int)outsz, cplusfilt_out))
-        snprintf(out, outsz, "%s", mangled);
+    if (!fgets(out, (int)outsz, cplusfilt_out)) {
+        /* pipe broken, try to restart c++filt once */
+        if (cplusfilt_pid > 0) {
+            kill(cplusfilt_pid, SIGTERM);
+            waitpid(cplusfilt_pid, NULL, 0);
+        }
+        if (cplusfilt_in) { fclose(cplusfilt_in); cplusfilt_in = NULL; }
+        if (cplusfilt_out) { fclose(cplusfilt_out); cplusfilt_out = NULL; }
+        cplusfilt_pid = 0;
+        demangle_init();
+        if (cplusfilt_in && cplusfilt_out) {
+            fprintf(cplusfilt_in, "%s\n", mangled);
+            fflush(cplusfilt_in);
+            if (!fgets(out, (int)outsz, cplusfilt_out))
+                snprintf(out, outsz, "%s", mangled);
+        } else {
+            snprintf(out, outsz, "%s", mangled);
+        }
+    }
     char *nl = strchr(out, '\n');
     if (nl) *nl = '\0';
 }
@@ -472,6 +490,73 @@ static void a2l_mark_source(const char *path, int has_source)
     snprintf(a2l_cache[a2l_cache_count].path, sizeof(a2l_cache[a2l_cache_count].path), "%s", path);
     a2l_cache[a2l_cache_count].has_source = has_source;
     a2l_cache_count++;
+}
+
+/* per-address addr2line cache */
+struct a2l_addr_cache {
+    char path[512];
+    u64 addr;
+    char src[256];
+    int present;
+};
+
+static struct a2l_addr_cache *a2l_addr_cache;
+static int a2l_addr_cap;
+static int a2l_addr_count;
+
+static uint64_t a2l_addr_hash(const char *path, u64 addr)
+{
+    uint64_t h = addr;
+    for (const char *p = path; *p; p++)
+        h = h * 31 + (unsigned char)*p;
+    return h;
+}
+
+static const char *a2l_addr_lookup(const char *path, u64 addr)
+{
+    if (!a2l_addr_cache || a2l_addr_cap == 0) return NULL;
+    uint64_t h = a2l_addr_hash(path, addr);
+    int mask = a2l_addr_cap - 1;
+    for (int i = 0; i < a2l_addr_cap; i++) {
+        int idx = (int)((h + i) & mask);
+        if (!a2l_addr_cache[idx].present) return NULL;
+        if (a2l_addr_cache[idx].addr == addr && strcmp(a2l_addr_cache[idx].path, path) == 0)
+            return a2l_addr_cache[idx].src;
+    }
+    return NULL;
+}
+
+static void a2l_addr_insert(const char *path, u64 addr, const char *src)
+{
+    if (a2l_addr_count * 2 >= a2l_addr_cap) {
+        int old_cap = a2l_addr_cap;
+        struct a2l_addr_cache *old = a2l_addr_cache;
+        a2l_addr_cap = old_cap ? old_cap * 2 : 256;
+        a2l_addr_cache = calloc((size_t)a2l_addr_cap, sizeof(*a2l_addr_cache));
+        a2l_addr_count = 0;
+        for (int i = 0; i < old_cap; i++) {
+            if (old[i].present)
+                a2l_addr_insert(old[i].path, old[i].addr, old[i].src);
+        }
+        free(old);
+    }
+    uint64_t h = a2l_addr_hash(path, addr);
+    int mask = a2l_addr_cap - 1;
+    for (int i = 0; i < a2l_addr_cap; i++) {
+        int idx = (int)((h + i) & mask);
+        if (!a2l_addr_cache[idx].present) {
+            snprintf(a2l_addr_cache[idx].path, sizeof(a2l_addr_cache[idx].path), "%s", path);
+            a2l_addr_cache[idx].addr = addr;
+            snprintf(a2l_addr_cache[idx].src, sizeof(a2l_addr_cache[idx].src), "%s", src ? src : "");
+            a2l_addr_cache[idx].present = 1;
+            a2l_addr_count++;
+            return;
+        }
+        if (a2l_addr_cache[idx].addr == addr && strcmp(a2l_addr_cache[idx].path, path) == 0) {
+            snprintf(a2l_addr_cache[idx].src, sizeof(a2l_addr_cache[idx].src), "%s", src ? src : "");
+            return;
+        }
+    }
 }
 
 const char *sym_resolve_user(struct sym_cache *sc, struct maps_parse *mp,
@@ -542,23 +627,31 @@ const char *sym_resolve_user_src(struct sym_cache *sc, struct maps_parse *mp,
 
     src[0] = '\0';
     if (!a2l_known_no_source(a2l_binary)) {
-        if (sym_resolve_source(a2l_binary, file_addr, afunc, sizeof(afunc),
-                               afile, sizeof(afile), &aline) == 0) {
-            const char *afbase = base_name(afile);
-            int useful = 0;
-            if (aline > 0) {
-                snprintf(src, srcsz, "%s:%d", afbase, aline);
-                useful = 1;
-            } else if (afbase[0] && afbase[0] != '?') {
-                snprintf(src, srcsz, "%s", afbase);
-                useful = 1;
-            }
-            if (useful)
-                a2l_mark_source(a2l_binary, 1);
-            else
-                a2l_mark_source(a2l_binary, 0);
+        const char *cached = a2l_addr_lookup(a2l_binary, file_addr);
+        if (cached) {
+            if (cached[0])
+                snprintf(src, srcsz, "%s", cached);
         } else {
-            a2l_mark_source(a2l_binary, 0);
+            if (sym_resolve_source(a2l_binary, file_addr, afunc, sizeof(afunc),
+                                   afile, sizeof(afile), &aline) == 0) {
+                const char *afbase = base_name(afile);
+                int useful = 0;
+                if (aline > 0) {
+                    snprintf(src, srcsz, "%s:%d", afbase, aline);
+                    useful = 1;
+                } else if (afbase[0] && afbase[0] != '?') {
+                    snprintf(src, srcsz, "%s", afbase);
+                    useful = 1;
+                }
+                a2l_addr_insert(a2l_binary, file_addr, src);
+                if (useful)
+                    a2l_mark_source(a2l_binary, 1);
+                else
+                    a2l_mark_source(a2l_binary, 0);
+            } else {
+                a2l_addr_insert(a2l_binary, file_addr, "");
+                a2l_mark_source(a2l_binary, 0);
+            }
         }
     }
 
