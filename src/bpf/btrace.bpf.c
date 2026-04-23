@@ -39,6 +39,13 @@ struct {
     __type(value, u32);
 } target_map SEC(".maps");
 
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, u32);
+    __type(value, u64);
+} stats_map SEC(".maps");
+
 static __always_inline u32 get_target_tgid(void)
 {
     u32 key = 0;
@@ -69,7 +76,14 @@ int handle_sched_switch(struct trace_event_raw_sched_switch *ctx)
     bt.kstack_id = bpf_get_stackid(ctx, &stack_map, 0);
     bpf_get_current_comm(&bt.comm, sizeof(bt.comm));
 
-    bpf_map_update_elem(&blocked_map, &prev_pid, &bt, BPF_ANY);
+    if (bpf_map_update_elem(&blocked_map, &prev_pid, &bt, BPF_ANY) != 0) {
+        u32 key = 0;
+        u64 *cnt = bpf_map_lookup_elem(&stats_map, &key);
+        if (cnt) {
+            u64 new_cnt = *cnt + 1;
+            bpf_map_update_elem(&stats_map, &key, &new_cnt, BPF_ANY);
+        }
+    }
     return 0;
 }
 
@@ -101,8 +115,11 @@ int handle_sched_waking(struct trace_event_raw_sched_wakeup_template *ctx)
     __builtin_memcpy(evt.blocked_comm, bt->comm, COMM_LEN);
     bpf_get_current_comm(&evt.waker_comm, sizeof(evt.waker_comm));
 
+    u8 out_buf[128];
+    out_buf[0] = EVT_BLOCK_WAKE;
+    __builtin_memcpy(&out_buf[1], &evt, sizeof(evt));
     bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU,
-                          &evt, sizeof(evt));
+                          out_buf, 1 + sizeof(evt));
     bpf_map_delete_elem(&blocked_map, &target_pid);
     return 0;
 }

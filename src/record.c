@@ -37,15 +37,29 @@ static void perf_event_cb(void *ctx, int cpu, void *data, unsigned int size)
     (void)cpu;
     struct record_ctx *rctx = ctx;
     if (!rctx || !rctx->writer) return;
+    if (size < 1) return;
 
-    if (size >= sizeof(struct block_wake_event)) {
-        bt_writer_event(rctx->writer, EVT_BLOCK_WAKE, data, sizeof(struct block_wake_event));
-    } else if (size >= sizeof(struct block_only_event)) {
-        bt_writer_event(rctx->writer, EVT_BLOCK_ONLY, data, sizeof(struct block_only_event));
-    } else if (size >= sizeof(struct thread_create_event)) {
-        bt_writer_event(rctx->writer, EVT_THREAD_CREATE, data, sizeof(struct thread_create_event));
-    } else if (size >= sizeof(struct thread_exit_event)) {
-        bt_writer_event(rctx->writer, EVT_THREAD_EXIT, data, sizeof(struct thread_exit_event));
+    u8 type = *(u8 *)data;
+    void *evt_data = (char *)data + 1;
+    unsigned int evt_len = size - 1;
+
+    switch (type) {
+    case EVT_BLOCK_WAKE:
+        if (evt_len >= sizeof(struct block_wake_event))
+            bt_writer_event(rctx->writer, EVT_BLOCK_WAKE, evt_data, sizeof(struct block_wake_event));
+        break;
+    case EVT_BLOCK_ONLY:
+        if (evt_len >= sizeof(struct block_only_event))
+            bt_writer_event(rctx->writer, EVT_BLOCK_ONLY, evt_data, sizeof(struct block_only_event));
+        break;
+    case EVT_THREAD_CREATE:
+        if (evt_len >= sizeof(struct thread_create_event))
+            bt_writer_event(rctx->writer, EVT_THREAD_CREATE, evt_data, sizeof(struct thread_create_event));
+        break;
+    case EVT_THREAD_EXIT:
+        if (evt_len >= sizeof(struct thread_exit_event))
+            bt_writer_event(rctx->writer, EVT_THREAD_EXIT, evt_data, sizeof(struct thread_exit_event));
+        break;
     }
 }
 
@@ -149,6 +163,14 @@ int record_main(int argc, char **argv)
     uint64_t end_ns = now_ns();
 
     fprintf(stderr, "\nFinalizing... \n");
+
+    {
+        uint32_t key = 0;
+        uint64_t dropped = 0;
+        if (bpf_map__lookup_elem(obj->maps.stats_map, &key, sizeof(key), &dropped, sizeof(dropped), BPF_ANY) == 0 && dropped > 0) {
+            fprintf(stderr, "Warning: %llu blocked events dropped due to blocked_map overflow\n", (unsigned long long)dropped);
+        }
+    }
 
     {
         uint32_t key = 0, next_key;

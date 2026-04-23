@@ -242,7 +242,9 @@ static void write_edge_stacks(FILE *f, struct dep_edge *e, int edge_idx,
     fprintf(f, "],\n");
 
     fprintf(f, "    \"waker_user_stack\": [");
-    write_stack_frames(f, r, e->waker_ustack_id, kt, sc, mp, 12);
+    if (e->waker_cat != WCAT_DISK_IO && e->waker_cat != WCAT_NET_RX &&
+        e->waker_cat != WCAT_TIMER)
+        write_stack_frames(f, r, e->waker_ustack_id, kt, sc, mp, 12);
     fprintf(f, "]\n  }");
 }
 
