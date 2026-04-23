@@ -86,7 +86,7 @@ main() {
     echo ""
     echo "[bench] === with btrace attached ==="
     local btfile="$OUT/btrace.btrace"
-    sudo "$BTRACE" record -p "$pid" -d 8 -o "$btfile" >"$OUT/record.log" 2>&1 &
+    sudo "$BTRACE" record -p "$pid" -o "$btfile" >"$OUT/record.log" 2>&1 &
     local btpid=$!
     sleep 1
 

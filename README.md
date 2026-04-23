@@ -66,6 +66,7 @@ Five test workloads cover the key blocking patterns:
 Build and run all test cases:
 
 ```bash
+make test-cases
 make check
 ```
 
@@ -110,12 +111,11 @@ This script:
 Attach btrace to a running process and collect blocking events:
 
 ```bash
-sudo btrace record -p <PID> [-d <stack_depth>] [-o <output.btrace>]
+sudo btrace record -p <PID> [-o <output.btrace>]
 ```
 
 Options:
 - `-p <PID>` — target process PID (required)
-- `-d <depth>` — max stack depth to display (default: 8)
 - `-o <file>` — output file (default: `btrace.btrace`)
 
 Press Ctrl+C (or send SIGINT) to stop recording.
@@ -123,7 +123,7 @@ Press Ctrl+C (or send SIGINT) to stop recording.
 Example — profile a MySQL server:
 
 ```bash
-sudo btrace record -p $(pidof mysqld) -d 8 -o mysql.btrace
+sudo btrace record -p $(pidof mysqld) -o mysql.btrace
 ```
 
 ### Report
@@ -193,14 +193,14 @@ btrace/
 │   ├── dot.c/h             # DOT graph generation
 │   ├── bpf/btrace.bpf.c    # BPF program (tracepoint handlers)
 │   └── include/
-│       ├── btrace.h         # Shared types, constants, event structs
-│       └── vmlinux.h        # Generated from kernel BTF (make vmlinux)
+│       ├── btrace.h        # Shared types, constants, event structs
+│       └── vmlinux.h       # Generated from kernel BTF (make vmlinux)
 ├── scripts/
 │   └── btrace2html.py      # DOT → interactive HTML converter
 ├── tests/
-│   ├── run_test.sh          # Test suite runner
-│   ├── run_mysql_e2e.sh     # MySQL e2e + overhead benchmark
-│   └── cases/               # Test workload programs
+│   ├── run_test.sh         # Test suite runner
+│   ├── run_mysql_e2e.sh    # MySQL e2e + overhead benchmark
+│   └── cases/              # Test workload programs
 └── Makefile
 ```
 

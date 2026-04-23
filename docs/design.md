@@ -7,8 +7,8 @@ It answers: *which threads block, why, for how long, and who wakes them* — bui
 dependency graph that reveals bottlenecks invisible to per-thread profilers.
 
 ```
-btrace record -p <PID> [-d <stack_depth>] [-o <file>]   # profile a process
-btrace report -i <file> [-o <dir>]                       # analyze & visualize
+btrace record -p <PID> [-o <file>]   # profile a process
+btrace report -i <file> [-o <dir>]   # analyze & visualize
 ```
 
 ## 2. Core Approach: BPF-Side Block/Wakeup Correlation
@@ -170,12 +170,11 @@ during report.
 ```
 ┌─────────────────────────────────────┐
 │ Header (256 bytes)                  │
-│   magic[4] = "BTR1"                │
+│   magic[4] = "BTR1"                 │
 │   version: u32                      │
 │   target_pid: u32                   │
 │   start_time_ns: u64                │
 │   end_time_ns: u64                  │
-│   stack_depth: u32  (display depth) │
 │   num_events: u64                   │
 │   num_stacks: u32                   │
 │   num_threads: u32                  │

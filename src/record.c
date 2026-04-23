@@ -58,7 +58,7 @@ static uint64_t now_ns(void)
 
 int record_main(int argc, char **argv)
 {
-    int pid = 0, stack_depth = 8;
+    int pid = 0;
     const char *output = "btrace.out";
 
     static struct option long_opts[] = {
@@ -69,13 +69,12 @@ int record_main(int argc, char **argv)
     };
 
     int c;
-    while ((c = getopt_long(argc, argv, "p:d:o:", long_opts, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "p:o:", long_opts, NULL)) != -1) {
         switch (c) {
         case 'p': pid = atoi(optarg); break;
-        case 'd': stack_depth = atoi(optarg); break;
         case 'o': output = optarg; break;
         default:
-            fprintf(stderr, "Usage: btrace record -p <PID> [-d <depth>] [-o <file>]\n");
+            fprintf(stderr, "Usage: btrace record -p <PID> [-o <file>]\n");
             return 1;
         }
     }
@@ -96,8 +95,7 @@ int record_main(int argc, char **argv)
 
     uint64_t start_ns = now_ns();
 
-    struct bt_writer *writer = bt_writer_create(output, (uint32_t)pid,
-                                                 (uint32_t)stack_depth, start_ns);
+    struct bt_writer *writer = bt_writer_create(output, (uint32_t)pid, start_ns);
     if (!writer) {
         fprintf(stderr, "Error: cannot create output file %s: %s\n",
                 output, strerror(errno));
@@ -133,8 +131,7 @@ int record_main(int argc, char **argv)
         return 1;
     }
 
-    fprintf(stderr, "Recording PID %d (stack depth %d) ... Press Ctrl-C to stop\n",
-            pid, stack_depth);
+    fprintf(stderr, "Recording PID %d ... Press Ctrl-C to stop\n", pid);
 
     struct record_ctx rctx = { .writer = writer };
 

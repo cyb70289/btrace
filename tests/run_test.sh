@@ -31,7 +31,7 @@ run_test() {
 
     # record
     local btfile="$tdir/btrace.btrace"
-    sudo "$BTRACE" record -p $wpid -d 8 -o "$btfile" >/dev/null &
+    sudo "$BTRACE" record -p $wpid -o "$btfile" >/dev/null &
     local bpid=$!
     sleep "$duration"
     sudo kill -INT $bpid 2>/dev/null || true

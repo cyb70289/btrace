@@ -321,9 +321,8 @@ int report_main(int argc, char **argv)
     double duration_s = (double)(r->hdr.end_time_ns - r->hdr.start_time_ns) / 1e9;
 
     printf("=== btrace report ===\n");
-    printf("Target PID: %u  Duration: %.1fs  Stack depth: %u  Events: %llu\n\n",
-           r->hdr.target_pid, duration_s, r->hdr.stack_depth,
-           (unsigned long long)total_bw);
+    printf("Target PID: %u  Duration: %.1fs  Events: %llu\n\n",
+           r->hdr.target_pid, duration_s, (unsigned long long)total_bw);
 
     for (int i = 0; i < ntstats; i++) {
         if (tstats[i].min_ns == UINT64_MAX) tstats[i].min_ns = 0;

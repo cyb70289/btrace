@@ -43,8 +43,7 @@ static int read_proc_file(const char *path, char **out, size_t *out_len)
     return 0;
 }
 
-struct bt_writer *bt_writer_create(const char *path, uint32_t target_pid,
-                                   uint32_t stack_depth, uint64_t start_ns)
+struct bt_writer *bt_writer_create(const char *path, uint32_t target_pid, uint64_t start_ns)
 {
     struct bt_writer *w = calloc(1, sizeof(*w));
     if (!w) return NULL;
@@ -59,7 +58,6 @@ struct bt_writer *bt_writer_create(const char *path, uint32_t target_pid,
     memcpy(w->hdr.magic, BTRACE_MAGIC, 4);
     w->hdr.version = BTRACE_VERSION;
     w->hdr.target_pid = target_pid;
-    w->hdr.stack_depth = stack_depth;
     w->hdr.start_time_ns = start_ns;
     w->hdr.events_off = BTRACE_HDR_SIZE;
 

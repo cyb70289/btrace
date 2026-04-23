@@ -5,6 +5,8 @@
 #include <sys/epoll.h>
 #include <sys/timerfd.h>
 
+#pragma GCC diagnostic ignored "-Wunused-result"
+
 #define ITERS 100
 
 static void *epoll_thread(void *arg)

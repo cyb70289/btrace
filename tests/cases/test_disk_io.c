@@ -5,6 +5,8 @@
 #include <fcntl.h>
 #include <string.h>
 
+#pragma GCC diagnostic ignored "-Wunused-result"
+
 #define ITERS 1024
 #define BUFSZ 65536
 

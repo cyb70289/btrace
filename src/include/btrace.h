@@ -40,7 +40,6 @@ struct btrace_header {
     char    magic[4];
     u32     version;
     u32     target_pid;
-    u32     stack_depth;
     u64     start_time_ns;
     u64     end_time_ns;
     u64     num_events;
