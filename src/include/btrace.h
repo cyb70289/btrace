@@ -50,7 +50,7 @@ struct btrace_header {
     u64     threads_off;
     u64     maps_off;
     u64     kallsyms_off;
-    u8      reserved[152];
+    u8      reserved[168];
 };
 
 struct block_wake_event {
@@ -115,6 +115,11 @@ struct thread_entry {
 #define CAT_WAITPID   8
 #define CAT_SIGNAL    9
 #define CAT_OTHER     10
+
+#ifndef __BPF__
+_Static_assert(sizeof(struct btrace_header) == BTRACE_HDR_SIZE,
+               "btrace_header size mismatch with BTRACE_HDR_SIZE");
+#endif
 
 #define WCAT_THREAD   1
 #define WCAT_DISK_IO  2

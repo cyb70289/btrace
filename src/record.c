@@ -84,15 +84,6 @@ int record_main(int argc, char **argv)
         return 1;
     }
 
-    {
-        char proc_path[64];
-        snprintf(proc_path, sizeof(proc_path), "/proc/%d/status", pid);
-        if (access(proc_path, F_OK) != 0) {
-            fprintf(stderr, "Error: PID %d does not exist\n", pid);
-            return 1;
-        }
-    }
-
     uint64_t start_ns = now_ns();
 
     struct bt_writer *writer = bt_writer_create(output, (uint32_t)pid, start_ns);

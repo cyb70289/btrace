@@ -361,15 +361,14 @@ int report_main(int argc, char **argv)
     }
 
     if (nsstats > 0) {
-        for (int i = 0; i < nsstats - 1; i++) {
-            for (int j = i + 1; j < nsstats; j++) {
-                if (sstats[j].total_ns > sstats[i].total_ns) {
-                    struct stack_stat tmp = sstats[i];
-                    sstats[i] = sstats[j];
-                    sstats[j] = tmp;
-                }
-            }
+        int stack_stat_cmp(const void *a, const void *b)
+        {
+            const struct stack_stat *sa = a, *sb = b;
+            if (sa->total_ns < sb->total_ns) return 1;
+            if (sa->total_ns > sb->total_ns) return -1;
+            return 0;
         }
+        qsort(sstats, (size_t)nsstats, sizeof(*sstats), stack_stat_cmp);
 
         printf("\nTop Blocking Stacks:\n");
         int to_show = nsstats > 10 ? 10 : nsstats;

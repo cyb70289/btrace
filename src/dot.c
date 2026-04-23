@@ -385,13 +385,13 @@ int dot_generate(struct dep_graph *g, const char *path,
 
     /* write _stacks.json sidecar */
     char jsonpath[512];
-    snprintf(jsonpath, sizeof(jsonpath), "%s", path);
-    char *dot_ext = strstr(jsonpath, ".dot");
-    if (dot_ext)
-        memcpy(dot_ext, "_stacks.json", 13);
-    else
-        snprintf(jsonpath + strlen(jsonpath), sizeof(jsonpath) - strlen(jsonpath),
-                 "_stacks.json");
+    const char *dot_ext = strrchr(path, '.');
+    if (dot_ext && strcmp(dot_ext, ".dot") == 0) {
+        size_t base_len = (size_t)(dot_ext - path);
+        snprintf(jsonpath, sizeof(jsonpath), "%.*s_stacks.json", (int)base_len, path);
+    } else {
+        snprintf(jsonpath, sizeof(jsonpath), "%s_stacks.json", path);
+    }
 
     FILE *jf = fopen(jsonpath, "w");
     if (jf) {

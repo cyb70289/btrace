@@ -339,7 +339,13 @@ int maps_parse(struct maps_parse *mp, const char *maps_text)
                        e->perms, (unsigned long *)&e->offset, e->path);
         if (n < 4) { while (*p && *p != '\n') p++; continue; }
 
-        if (e->path[0] == '[') { while (*p && *p != '\n') p++; continue; }
+        if (e->path[0] == '[') {
+            if (strncmp(e->path, "[vdso]", 6) != 0 &&
+                strncmp(e->path, "[vvar]", 6) != 0) {
+                while (*p && *p != '\n') p++;
+                continue;
+            }
+        }
 
         char *s = e->path;
         while (*s == ' ') s++;
@@ -361,11 +367,17 @@ void maps_free(struct maps_parse *mp)
 
 int maps_find(struct maps_parse *mp, u64 addr, struct maps_entry *out)
 {
-    for (int i = mp->count - 1; i >= 0; i--) {
-        if (addr >= mp->entries[i].start && addr < mp->entries[i].end) {
-            if (out) *out = mp->entries[i];
+    int lo = 0, hi = mp->count - 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        if (addr >= mp->entries[mid].start && addr < mp->entries[mid].end) {
+            if (out) *out = mp->entries[mid];
             return 0;
         }
+        if (addr < mp->entries[mid].start)
+            hi = mid - 1;
+        else
+            lo = mid + 1;
     }
     return -1;
 }
@@ -401,7 +413,13 @@ static void demangle_init(void)
 
 static void demangle(const char *mangled, char *out, size_t outsz)
 {
-    if (!mangled || mangled[0] != '_' || mangled[1] != 'Z') {
+    if (!mangled) {
+        snprintf(out, outsz, "%s", mangled);
+        return;
+    }
+    const char *p = mangled;
+    while (*p == '_') p++;
+    if (*p != 'Z') {
         snprintf(out, outsz, "%s", mangled);
         return;
     }
