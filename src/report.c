@@ -255,7 +255,8 @@ int report_main(int argc, char **argv)
                         tid_map[h] = ntstats;
                         tidx = ntstats++;
                         tstats[tidx].tid = bw->blocked_tid;
-                        strncpy(tstats[tidx].comm, bw->blocked_comm, COMM_LEN);
+                        strncpy(tstats[tidx].comm, bw->blocked_comm, COMM_LEN - 1);
+                        tstats[tidx].comm[COMM_LEN - 1] = '\0';
                         tstats[tidx].min_ns = UINT64_MAX;
                     }
                     break;
@@ -318,7 +319,8 @@ int report_main(int argc, char **argv)
 
             u32 waker_tid = bw->waker_tid;
             char waker_comm[COMM_LEN];
-            strncpy(waker_comm, bw->waker_comm, COMM_LEN);
+            strncpy(waker_comm, bw->waker_comm, COMM_LEN - 1);
+            waker_comm[COMM_LEN - 1] = '\0';
 
             if (wcat != WCAT_THREAD) {
                 waker_tid = 0;

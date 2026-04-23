@@ -114,7 +114,9 @@ void dep_graph_add(struct dep_graph *g, u32 from_tid, u32 to_tid,
     e->waker_kstack_id = waker_kstack_id;
     e->waker_ustack_id = waker_ustack_id;
     strncpy(e->from_comm, from_comm, COMM_LEN - 1);
+    e->from_comm[COMM_LEN - 1] = '\0';
     strncpy(e->to_comm, to_comm, COMM_LEN - 1);
+    e->to_comm[COMM_LEN - 1] = '\0';
 }
 
 void dep_graph_free(struct dep_graph *g)
