@@ -166,21 +166,6 @@ int bt_writer_dump_stacks(struct bt_writer *w, int map_fd)
     return 0;
 }
 
-int bt_writer_dump_threads(struct bt_writer *w, uint32_t tgid)
-{
-    (void)w;
-    (void)tgid;
-    return 0;
-}
-
-int bt_writer_save_file(struct bt_writer *w, const char *path, const char *fallback)
-{
-    (void)w;
-    (void)path;
-    (void)fallback;
-    return 0;
-}
-
 int bt_writer_close(struct bt_writer *w, uint64_t end_ns)
 {
     if (!w || !w->fp) return -1;

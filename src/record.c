@@ -102,9 +102,6 @@ int record_main(int argc, char **argv)
         return 1;
     }
 
-    bt_writer_dump_threads(writer, (uint32_t)pid);
-    bt_writer_save_file(writer, NULL, NULL);
-
     struct btrace_bpf *obj = btrace_bpf__open();
     if (!obj) {
         fprintf(stderr, "Error: failed to open BPF object\n");

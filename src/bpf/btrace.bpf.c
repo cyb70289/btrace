@@ -117,15 +117,9 @@ int handle_fork(struct trace_event_raw_sched_process_fork *ctx)
     if (parent_tgid != target)
         return 0;
 
-    struct thread_create_event evt = {};
-    evt.timestamp = bpf_ktime_get_ns();
-    evt.parent_tid = ctx->parent_pid;
-    evt.child_tid = ctx->child_pid;
-    evt.child_tgid = parent_tgid;
-    bpf_probe_read_kernel_str(evt.child_comm, COMM_LEN, ctx->child_comm);
-
-    bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU,
-                          &evt, sizeof(evt));
+    /* Thread creation events are intentionally ignored in userspace.
+     * We keep this tracepoint attached so the skeleton is stable,
+     * but we do not emit any perf event here. */
     return 0;
 }
 
@@ -142,13 +136,8 @@ int handle_exit(struct trace_event_raw_sched_process_template *ctx)
 
     bpf_map_delete_elem(&blocked_map, &tid);
 
-    struct thread_exit_event evt = {};
-    evt.timestamp = bpf_ktime_get_ns();
-    evt.tid = tid;
-    evt.tgid = tgid;
-
-    bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU,
-                          &evt, sizeof(evt));
+    /* Thread exit events are intentionally ignored in userspace.
+     * We only keep the tracepoint to clean up orphaned blocked_map entries. */
     return 0;
 }
 

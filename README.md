@@ -120,6 +120,8 @@ Options:
 
 Press Ctrl+C (or send SIGINT) to stop recording.
 
+> **Note:** btrace intentionally ignores threads created *after* recording starts, as well as blocking events where the wakeup did not occur before recording stopped. The thread list is a snapshot taken at record start.
+
 Example — profile a MySQL server:
 
 ```bash
