@@ -1,29 +1,26 @@
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
-#include <unistd.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+#include <unistd.h>
 
 #define PORT_BASE 19000
-#define ITERS     50
+#define ITERS 50
 
 static int port = PORT_BASE;
 
-static void *server(void *arg)
-{
+static void *server(void *arg) {
     (void)arg;
     int lfd = socket(AF_INET, SOCK_STREAM, 0);
     int opt = 1;
     setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    struct sockaddr_in addr = {
-        .sin_family = AF_INET,
-        .sin_port = htons(port),
-        .sin_addr.s_addr = INADDR_ANY
-    };
+    struct sockaddr_in addr = {.sin_family = AF_INET,
+                               .sin_port = htons(port),
+                               .sin_addr.s_addr = INADDR_ANY};
     bind(lfd, (struct sockaddr *)&addr, sizeof(addr));
     listen(lfd, 1);
 
@@ -31,23 +28,21 @@ static void *server(void *arg)
     char buf[256];
     for (int i = 0; i < ITERS; i++) {
         int n = recv(cfd, buf, sizeof(buf), 0);
-        if (n <= 0) break;
+        if (n <= 0)
+            break;
     }
     close(cfd);
     close(lfd);
     return NULL;
 }
 
-static void *client(void *arg)
-{
+static void *client(void *arg) {
     (void)arg;
     usleep(100000);
 
-    struct sockaddr_in addr = {
-        .sin_family = AF_INET,
-        .sin_port = htons(port),
-        .sin_addr.s_addr = inet_addr("127.0.0.1")
-    };
+    struct sockaddr_in addr = {.sin_family = AF_INET,
+                               .sin_port = htons(port),
+                               .sin_addr.s_addr = inet_addr("127.0.0.1")};
 
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     connect(fd, (struct sockaddr *)&addr, sizeof(addr));
@@ -61,9 +56,9 @@ static void *client(void *arg)
     return NULL;
 }
 
-int main(int argc, char **argv)
-{
-    if (argc > 1) port = atoi(argv[1]);
+int main(int argc, char **argv) {
+    if (argc > 1)
+        port = atoi(argv[1]);
 
     pthread_t s, c;
     pthread_create(&s, NULL, server, NULL);

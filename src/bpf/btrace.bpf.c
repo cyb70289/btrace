@@ -1,7 +1,7 @@
+#include "btrace.h"
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
-#include "btrace.h"
 
 struct blocked_thread {
     u64 timestamp;
@@ -46,16 +46,14 @@ struct {
     __type(value, u64);
 } stats_map SEC(".maps");
 
-static __always_inline u32 get_target_tgid(void)
-{
+static __always_inline u32 get_target_tgid(void) {
     u32 key = 0;
     u32 *val = bpf_map_lookup_elem(&target_map, &key);
     return val ? *val : 0;
 }
 
 SEC("tp/sched/sched_switch")
-int handle_sched_switch(struct trace_event_raw_sched_switch *ctx)
-{
+int handle_sched_switch(struct trace_event_raw_sched_switch *ctx) {
     u64 pid_tgid = bpf_get_current_pid_tgid();
     u32 prev_tgid = pid_tgid >> 32;
     u32 prev_pid = (u32)pid_tgid;
@@ -88,8 +86,7 @@ int handle_sched_switch(struct trace_event_raw_sched_switch *ctx)
 }
 
 SEC("tp/sched/sched_waking")
-int handle_sched_waking(struct trace_event_raw_sched_wakeup_template *ctx)
-{
+int handle_sched_waking(struct trace_event_raw_sched_wakeup_template *ctx) {
     u32 target_pid = ctx->pid;
 
     struct blocked_thread *bt = bpf_map_lookup_elem(&blocked_map, &target_pid);
@@ -121,8 +118,7 @@ int handle_sched_waking(struct trace_event_raw_sched_wakeup_template *ctx)
 }
 
 SEC("tp/sched/sched_process_fork")
-int handle_fork(struct trace_event_raw_sched_process_fork *ctx)
-{
+int handle_fork(struct trace_event_raw_sched_process_fork *ctx) {
     u32 target = get_target_tgid();
     u64 pid_tgid = bpf_get_current_pid_tgid();
     u32 parent_tgid = pid_tgid >> 32;
@@ -137,8 +133,7 @@ int handle_fork(struct trace_event_raw_sched_process_fork *ctx)
 }
 
 SEC("tp/sched/sched_process_exit")
-int handle_exit(struct trace_event_raw_sched_process_template *ctx)
-{
+int handle_exit(struct trace_event_raw_sched_process_template *ctx) {
     u64 pid_tgid = bpf_get_current_pid_tgid();
     u32 tid = (u32)pid_tgid;
     u32 tgid = pid_tgid >> 32;

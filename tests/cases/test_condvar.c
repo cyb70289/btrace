@@ -1,16 +1,15 @@
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
 #include <unistd.h>
 
 #define ITERS 200
 
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t  cv  = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
 static int ready = 0;
 
-static void *producer(void *arg)
-{
+static void *producer(void *arg) {
     (void)arg;
     for (int i = 0; i < ITERS; i++) {
         pthread_mutex_lock(&mtx);
@@ -22,8 +21,7 @@ static void *producer(void *arg)
     return NULL;
 }
 
-static void *consumer(void *arg)
-{
+static void *consumer(void *arg) {
     (void)arg;
     for (int i = 0; i < ITERS; i++) {
         pthread_mutex_lock(&mtx);
@@ -35,8 +33,7 @@ static void *consumer(void *arg)
     return NULL;
 }
 
-int main(void)
-{
+int main(void) {
     pthread_t prod, cons;
     pthread_create(&prod, NULL, producer, NULL);
     pthread_create(&cons, NULL, consumer, NULL);

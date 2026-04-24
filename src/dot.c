@@ -5,27 +5,30 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char *edge_color(int waker_cat)
-{
+static const char *edge_color(int waker_cat) {
     switch (waker_cat) {
-    case WCAT_THREAD:  return "red";
-    case WCAT_DISK_IO: return "blue";
-    case WCAT_NET_RX:  return "green";
-    case WCAT_TIMER:   return "orange";
-    case WCAT_SIGNAL:  return "purple";
-    default:           return "gray";
+    case WCAT_THREAD:
+        return "red";
+    case WCAT_DISK_IO:
+        return "blue";
+    case WCAT_NET_RX:
+        return "green";
+    case WCAT_TIMER:
+        return "orange";
+    case WCAT_SIGNAL:
+        return "purple";
+    default:
+        return "gray";
     }
 }
 
 static const char *node_palette[] = {
-    "#b3d9ff", "#ffb3b3", "#b3ffb3", "#ffe6b3", "#e6b3ff",
-    "#b3fff0", "#fff0b3", "#ffb3e6", "#b3e6ff", "#e6ffb3",
-    "#d9b3ff", "#b3ffcc", "#ffccb3", "#b3ccff", "#ccb3ff",
-    "#ff99aa", "#99ccff", "#99ffcc", "#ffcc99", "#cc99ff",
+    "#b3d9ff", "#ffb3b3", "#b3ffb3", "#ffe6b3", "#e6b3ff", "#b3fff0", "#fff0b3",
+    "#ffb3e6", "#b3e6ff", "#e6ffb3", "#d9b3ff", "#b3ffcc", "#ffccb3", "#b3ccff",
+    "#ccb3ff", "#ff99aa", "#99ccff", "#99ffcc", "#ffcc99", "#cc99ff",
 };
 
-static void strip_trailing_dashnum(const char *comm, char *out, size_t outsz)
-{
+static void strip_trailing_dashnum(const char *comm, char *out, size_t outsz) {
     strncpy(out, comm, outsz - 1);
     out[outsz - 1] = '\0';
     size_t len = strlen(out);
@@ -43,8 +46,7 @@ struct comm_color {
 
 static struct comm_color *comm_to_color(struct comm_color *cc, int *cc_count,
                                         int *cc_cap, const char *comm,
-                                        const char **out_color)
-{
+                                        const char **out_color) {
     char key[COMM_LEN];
     strip_trailing_dashnum(comm, key, sizeof(key));
 
@@ -62,23 +64,20 @@ static struct comm_color *comm_to_color(struct comm_color *cc, int *cc_count,
     }
     strncpy(cc[idx].comm, key, COMM_LEN - 1);
     cc[idx].comm[COMM_LEN - 1] = '\0';
-    cc[idx].color = node_palette[idx % (sizeof(node_palette) / sizeof(node_palette[0]))];
+    cc[idx].color =
+        node_palette[idx % (sizeof(node_palette) / sizeof(node_palette[0]))];
     *out_color = cc[idx].color;
     (*cc_count)++;
     return cc;
 }
 
-void dep_graph_init(struct dep_graph *g)
-{
-    memset(g, 0, sizeof(*g));
-}
+void dep_graph_init(struct dep_graph *g) { memset(g, 0, sizeof(*g)); }
 
-void dep_graph_add(struct dep_graph *g, u32 from_tid, u32 to_tid,
-                   int block_cat, int waker_cat, u64 duration_ns,
-                   int blocked_kstack_id, int blocked_ustack_id,
-                   int waker_kstack_id, int waker_ustack_id,
-                   const char *from_comm, const char *to_comm)
-{
+void dep_graph_add(struct dep_graph *g, u32 from_tid, u32 to_tid, int block_cat,
+                   int waker_cat, u64 duration_ns, int blocked_kstack_id,
+                   int blocked_ustack_id, int waker_kstack_id,
+                   int waker_ustack_id, const char *from_comm,
+                   const char *to_comm) {
     for (int i = 0; i < g->edge_count; i++) {
         struct dep_edge *e = &g->edges[i];
         if (e->from_tid == from_tid && e->to_tid == to_tid &&
@@ -119,30 +118,28 @@ void dep_graph_add(struct dep_graph *g, u32 from_tid, u32 to_tid,
     e->to_comm[COMM_LEN - 1] = '\0';
 }
 
-void dep_graph_free(struct dep_graph *g)
-{
-    free(g->edges);
-}
+void dep_graph_free(struct dep_graph *g) { free(g->edges); }
 
-static int is_special_tid(u32 tid)
-{
-    return tid == 0;
-}
+static int is_special_tid(u32 tid) { return tid == 0; }
 
-static const char *special_node_name(int waker_cat)
-{
+static const char *special_node_name(int waker_cat) {
     switch (waker_cat) {
-    case WCAT_DISK_IO: return "disk_io";
-    case WCAT_NET_RX:  return "net_rx";
-    case WCAT_TIMER:   return "timer";
-    case WCAT_SIGNAL:  return "signal";
-    case WCAT_OTHER:   return "kernel";
-    default:           return "other";
+    case WCAT_DISK_IO:
+        return "disk_io";
+    case WCAT_NET_RX:
+        return "net_rx";
+    case WCAT_TIMER:
+        return "timer";
+    case WCAT_SIGNAL:
+        return "signal";
+    case WCAT_OTHER:
+        return "kernel";
+    default:
+        return "other";
     }
 }
 
-static void format_duration(u64 ns, char *buf, size_t bufsz)
-{
+static void format_duration(u64 ns, char *buf, size_t bufsz) {
     if (ns < 1000)
         snprintf(buf, bufsz, "%lluns", (unsigned long long)ns);
     else if (ns < 1000000)
@@ -153,45 +150,52 @@ static void format_duration(u64 ns, char *buf, size_t bufsz)
         snprintf(buf, bufsz, "%.2fs", (double)ns / 1e9);
 }
 
-static void json_escape(FILE *f, const char *s)
-{
-    if (!s) { fprintf(f, "null"); return; }
+static void json_escape(FILE *f, const char *s) {
+    if (!s) {
+        fprintf(f, "null");
+        return;
+    }
     fputc('"', f);
     for (; *s; s++) {
-        if (*s == '"') fprintf(f, "\\\"");
-        else if (*s == '\\') fprintf(f, "\\\\");
-        else if (*s == '\n') fprintf(f, "\\n");
-        else fputc(*s, f);
+        if (*s == '"')
+            fprintf(f, "\\\"");
+        else if (*s == '\\')
+            fprintf(f, "\\\\");
+        else if (*s == '\n')
+            fprintf(f, "\\n");
+        else
+            fputc(*s, f);
     }
     fputc('"', f);
 }
 
 static void write_stack_frames(FILE *f, struct bt_reader *r, int stack_id,
-                               struct ksym_table *kt,
-                               struct sym_cache *sc, struct maps_parse *mp,
-                               int max_frames)
-{
-    if (!r || stack_id < 0) return;
+                               struct ksym_table *kt, struct sym_cache *sc,
+                               struct maps_parse *mp, int max_frames) {
+    if (!r || stack_id < 0)
+        return;
     u64 *frames = NULL;
     int nframes = 0;
-    if (bt_reader_get_stack(r, stack_id, &frames, &nframes) != 0) return;
+    if (bt_reader_get_stack(r, stack_id, &frames, &nframes) != 0)
+        return;
 
     for (int j = 0; j < nframes && j < max_frames; j++) {
-        if (j) fprintf(f, ", ");
+        if (j)
+            fprintf(f, ", ");
         u64 off;
         const char *name = ksym_lookup(kt, frames[j], &off);
         if (name) {
             char tmp[128];
-            snprintf(tmp, sizeof(tmp), "%s+0x%llx", name, (unsigned long long)off);
+            snprintf(tmp, sizeof(tmp), "%s+0x%llx", name,
+                     (unsigned long long)off);
             fprintf(f, "{\"s\":");
             json_escape(f, tmp);
             fprintf(f, "}");
         } else {
             char ubuf[256], srcbuf[256];
             srcbuf[0] = '\0';
-            const char *uname = sym_resolve_user_src(sc, mp, frames[j],
-                                                     ubuf, sizeof(ubuf),
-                                                     srcbuf, sizeof(srcbuf));
+            const char *uname = sym_resolve_user_src(
+                sc, mp, frames[j], ubuf, sizeof(ubuf), srcbuf, sizeof(srcbuf));
             if (uname) {
                 fprintf(f, "{\"s\":");
                 json_escape(f, uname);
@@ -202,7 +206,8 @@ static void write_stack_frames(FILE *f, struct bt_reader *r, int stack_id,
                 fprintf(f, "}");
             } else {
                 char tmp[32];
-                snprintf(tmp, sizeof(tmp), "0x%llx", (unsigned long long)frames[j]);
+                snprintf(tmp, sizeof(tmp), "0x%llx",
+                         (unsigned long long)frames[j]);
                 fprintf(f, "{\"s\":");
                 json_escape(f, tmp);
                 fprintf(f, "}");
@@ -212,9 +217,8 @@ static void write_stack_frames(FILE *f, struct bt_reader *r, int stack_id,
 }
 
 static void write_edge_stacks(FILE *f, struct dep_edge *e, int edge_idx,
-                               struct bt_reader *r, struct ksym_table *kt,
-                               struct sym_cache *sc, struct maps_parse *mp)
-{
+                              struct bt_reader *r, struct ksym_table *kt,
+                              struct sym_cache *sc, struct maps_parse *mp) {
     fprintf(f, "  \"e%d\": {\n", edge_idx);
     fprintf(f, "    \"from\": \"%u (%s)\",\n", e->from_tid, e->from_comm);
 
@@ -250,13 +254,12 @@ static void write_edge_stacks(FILE *f, struct dep_edge *e, int edge_idx,
     fprintf(f, "]\n  }");
 }
 
-int dot_generate(struct dep_graph *g, const char *path,
-                 u32 min_count, u64 min_ns,
-                 struct bt_reader *r, struct ksym_table *kt,
-                 struct sym_cache *sc, struct maps_parse *mp)
-{
+int dot_generate(struct dep_graph *g, const char *path, u32 min_count,
+                 u64 min_ns, struct bt_reader *r, struct ksym_table *kt,
+                 struct sym_cache *sc, struct maps_parse *mp) {
     FILE *f = fopen(path, "w");
-    if (!f) return -1;
+    if (!f)
+        return -1;
 
     int *used = calloc(g->edge_count, sizeof(int));
     int nused = 0;
@@ -267,7 +270,8 @@ int dot_generate(struct dep_graph *g, const char *path,
     }
 
     if (nused == 0) {
-        fprintf(f, "digraph btrace {\n  rankdir=LR;\n  label=\"no edges above threshold\";\n}\n");
+        fprintf(f, "digraph btrace {\n  rankdir=LR;\n  label=\"no edges above "
+                   "threshold\";\n}\n");
         fclose(f);
         free(used);
         return 0;
@@ -289,11 +293,16 @@ int dot_generate(struct dep_graph *g, const char *path,
         if (!is_special_tid(e->from_tid)) {
             int found = 0;
             for (int j = 0; j < seen_count; j++)
-                if (seen_tids[j] == e->from_tid) { found = 1; break; }
+                if (seen_tids[j] == e->from_tid) {
+                    found = 1;
+                    break;
+                }
             if (!found) {
                 const char *col;
                 cc = comm_to_color(cc, &cc_count, &cc_cap, e->from_comm, &col);
-                fprintf(f, "  t%u [label=\"%u\\n%s\" style=filled fillcolor=\"%s\"];\n",
+                fprintf(f,
+                        "  t%u [label=\"%u\\n%s\" style=filled "
+                        "fillcolor=\"%s\"];\n",
                         e->from_tid, e->from_tid, e->from_comm, col);
                 if (seen_count >= seen_cap) {
                     seen_cap = seen_cap ? seen_cap * 2 : 32;
@@ -306,11 +315,16 @@ int dot_generate(struct dep_graph *g, const char *path,
         if (!is_special_tid(e->to_tid)) {
             int found = 0;
             for (int j = 0; j < seen_count; j++)
-                if (seen_tids[j] == e->to_tid) { found = 1; break; }
+                if (seen_tids[j] == e->to_tid) {
+                    found = 1;
+                    break;
+                }
             if (!found) {
                 const char *col;
                 cc = comm_to_color(cc, &cc_count, &cc_cap, e->to_comm, &col);
-                fprintf(f, "  t%u [label=\"%u\\n%s\" style=filled fillcolor=\"%s\"];\n",
+                fprintf(f,
+                        "  t%u [label=\"%u\\n%s\" style=filled "
+                        "fillcolor=\"%s\"];\n",
                         e->to_tid, e->to_tid, e->to_comm, col);
                 if (seen_count >= seen_cap) {
                     seen_cap = seen_cap ? seen_cap * 2 : 32;
@@ -328,7 +342,10 @@ int dot_generate(struct dep_graph *g, const char *path,
         if (is_special_tid(e->to_tid)) {
             int found = 0;
             for (int j = 0; j < seen_cats; j++)
-                if (cat_seen[j] == e->waker_cat) { found = 1; break; }
+                if (cat_seen[j] == e->waker_cat) {
+                    found = 1;
+                    break;
+                }
             if (!found) {
                 fprintf(f, "  cat_%s [label=\"[%s]\" shape=ellipse];\n",
                         special_node_name(e->waker_cat),
@@ -349,39 +366,42 @@ int dot_generate(struct dep_graph *g, const char *path,
         char from_label[80], to_label[80];
 
         if (is_special_tid(e->from_tid)) {
-            snprintf(from_id, sizeof(from_id), "cat_%s", special_node_name(e->waker_cat));
-            snprintf(from_label, sizeof(from_label), "[%s]", special_node_name(e->waker_cat));
+            snprintf(from_id, sizeof(from_id), "cat_%s",
+                     special_node_name(e->waker_cat));
+            snprintf(from_label, sizeof(from_label), "[%s]",
+                     special_node_name(e->waker_cat));
         } else {
             snprintf(from_id, sizeof(from_id), "t%u", e->from_tid);
-            snprintf(from_label, sizeof(from_label), "%u %s", e->from_tid, e->from_comm);
+            snprintf(from_label, sizeof(from_label), "%u %s", e->from_tid,
+                     e->from_comm);
         }
 
         if (is_special_tid(e->to_tid)) {
-            snprintf(to_id, sizeof(to_id), "cat_%s", special_node_name(e->waker_cat));
-            snprintf(to_label, sizeof(to_label), "[%s]", special_node_name(e->waker_cat));
+            snprintf(to_id, sizeof(to_id), "cat_%s",
+                     special_node_name(e->waker_cat));
+            snprintf(to_label, sizeof(to_label), "[%s]",
+                     special_node_name(e->waker_cat));
         } else {
             snprintf(to_id, sizeof(to_id), "t%u", e->to_tid);
-            snprintf(to_label, sizeof(to_label), "%u %s", e->to_tid, e->to_comm);
+            snprintf(to_label, sizeof(to_label), "%u %s", e->to_tid,
+                     e->to_comm);
         }
 
         char tooltip[256];
         if (is_special_tid(e->to_tid))
             snprintf(tooltip, sizeof(tooltip), "%u %s -> [%s] | %s %s, %ux",
-                     e->from_tid, e->from_comm,
-                     special_node_name(e->waker_cat),
+                     e->from_tid, e->from_comm, special_node_name(e->waker_cat),
                      block_cat_name(e->block_cat), dur, e->count);
         else
             snprintf(tooltip, sizeof(tooltip), "%u %s -> %u %s | %s %s, %ux",
-                     e->from_tid, e->from_comm,
-                     e->to_tid, e->to_comm,
+                     e->from_tid, e->from_comm, e->to_tid, e->to_comm,
                      block_cat_name(e->block_cat), dur, e->count);
 
-        fprintf(f, "  %s -> %s [label=\"%s\\n%s, %ux\" color=%s "
-                   "edgeid=\"e%d\" tooltip=\"%s\"];\n",
-                from_id, to_id,
-                block_cat_name(e->block_cat), dur, e->count,
-                edge_color(e->waker_cat),
-                used[k], tooltip);
+        fprintf(f,
+                "  %s -> %s [label=\"%s\\n%s, %ux\" color=%s "
+                "edgeid=\"e%d\" tooltip=\"%s\"];\n",
+                from_id, to_id, block_cat_name(e->block_cat), dur, e->count,
+                edge_color(e->waker_cat), used[k], tooltip);
     }
 
     fprintf(f, "}\n");
@@ -392,7 +412,8 @@ int dot_generate(struct dep_graph *g, const char *path,
     const char *dot_ext = strrchr(path, '.');
     if (dot_ext && strcmp(dot_ext, ".dot") == 0) {
         size_t base_len = (size_t)(dot_ext - path);
-        snprintf(jsonpath, sizeof(jsonpath), "%.*s_stacks.json", (int)base_len, path);
+        snprintf(jsonpath, sizeof(jsonpath), "%.*s_stacks.json", (int)base_len,
+                 path);
     } else {
         snprintf(jsonpath, sizeof(jsonpath), "%s_stacks.json", path);
     }
@@ -402,7 +423,8 @@ int dot_generate(struct dep_graph *g, const char *path,
         fprintf(jf, "{\n");
         int first = 1;
         for (int k = 0; k < nused; k++) {
-            if (!first) fprintf(jf, ",\n");
+            if (!first)
+                fprintf(jf, ",\n");
             first = 0;
             write_edge_stacks(jf, g->edges + used[k], used[k], r, kt, sc, mp);
         }
