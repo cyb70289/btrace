@@ -16,18 +16,14 @@ const char *block_cat_name(int cat) {
         return "disk_io";
     case CAT_NET_IO:
         return "net_io";
-    case CAT_EPOLL:
-        return "epoll";
+    case CAT_POLL:
+        return "poll";
     case CAT_SLEEP:
         return "sleep";
-    case CAT_PGFAULT:
-        return "page_fault";
     case CAT_IO_URING:
         return "io_uring";
-    case CAT_WAITPID:
-        return "waitpid";
-    case CAT_SIGNAL:
-        return "signal";
+    case CAT_AIO:
+        return "aio";
     case CAT_OTHER:
         return "other";
     default:
@@ -45,8 +41,6 @@ const char *waker_cat_name(int cat) {
         return "net_rx";
     case WCAT_TIMER:
         return "timer";
-    case WCAT_SIGNAL:
-        return "signal";
     case WCAT_OTHER:
         return "kernel";
     default:
@@ -57,110 +51,81 @@ const char *waker_cat_name(int cat) {
 static int is_special_tid(u32 tid) { return tid == 0; }
 
 static int match_sym(const char **syms, int nframes, const char *pattern) {
-    for (int i = 0; i < nframes && i < 8; i++) {
+    for (int i = 0; i < nframes; i++) {
         if (syms[i] && strstr(syms[i], pattern))
             return 1;
     }
     return 0;
 }
 
-int classify_block_reason(int kstack_id, int num_frames, u64 *frames,
-                          const char **syms) {
-    (void)kstack_id;
-    (void)frames;
+// XXX: infer thread block reason per kernel call stack
+int classify_block_reason(const char **syms, int num_frames) {
     if (match_sym(syms, num_frames, "futex_wait"))
         return CAT_FUTEX;
-    if (match_sym(syms, num_frames, "ep_poll"))
-        return CAT_EPOLL;
-    if (match_sym(syms, num_frames, "do_poll"))
-        return CAT_EPOLL;
-    if (match_sym(syms, num_frames, "schedule_hrtimeout"))
-        return CAT_FUTEX;
-    if (match_sym(syms, num_frames, "io_schedule"))
-        return CAT_DISK_IO;
-    if (match_sym(syms, num_frames, "read_events"))
-        return CAT_DISK_IO;
-    if (match_sym(syms, num_frames, "vfs_read"))
-        return CAT_DISK_IO;
-    if (match_sym(syms, num_frames, "vfs_write"))
-        return CAT_DISK_IO;
-    if (match_sym(syms, num_frames, "blkdev"))
-        return CAT_DISK_IO;
-    if (match_sym(syms, num_frames, "do_sync_write"))
-        return CAT_DISK_IO;
-    if (match_sym(syms, num_frames, "ext4"))
-        return CAT_DISK_IO;
-    if (match_sym(syms, num_frames, "xfs"))
-        return CAT_DISK_IO;
-    if (match_sym(syms, num_frames, "jbd2"))
-        return CAT_DISK_IO;
-    if (match_sym(syms, num_frames, "folio_wait_bit"))
-        return CAT_DISK_IO;
-    if (match_sym(syms, num_frames, "filemap_wait"))
-        return CAT_DISK_IO;
-    if (match_sym(syms, num_frames, "file_write_and_wait"))
-        return CAT_DISK_IO;
-    if (match_sym(syms, num_frames, "tcp_recvmsg"))
-        return CAT_NET_IO;
-    if (match_sym(syms, num_frames, "udp_recvmsg"))
-        return CAT_NET_IO;
-    if (match_sym(syms, num_frames, "sk_wait_data"))
-        return CAT_NET_IO;
+
     if (match_sym(syms, num_frames, "nanosleep"))
         return CAT_SLEEP;
-    if (match_sym(syms, num_frames, "hrtimer_nanosleep"))
-        return CAT_SLEEP;
-    if (match_sym(syms, num_frames, "handle_mm_fault"))
-        return CAT_PGFAULT;
+
+    if (match_sym(syms, num_frames, "ep_poll"))
+        return CAT_POLL;
+    if (match_sym(syms, num_frames, "do_poll"))
+        return CAT_POLL;
+
     if (match_sym(syms, num_frames, "io_uring"))
         return CAT_IO_URING;
-    if (match_sym(syms, num_frames, "wait_task"))
-        return CAT_WAITPID;
-    if (match_sym(syms, num_frames, "do_wait"))
-        return CAT_WAITPID;
-    if (match_sym(syms, num_frames, "sigsuspend"))
-        return CAT_SIGNAL;
+
+    if (match_sym(syms, num_frames, "io_getevents"))
+        return CAT_AIO;
+
+    if (match_sym(syms, num_frames, "folio_"))
+        return CAT_DISK_IO;
+    if (match_sym(syms, num_frames, "_fsync"))
+        return CAT_DISK_IO;
+    if (match_sym(syms, num_frames, "_fdatasync"))
+        return CAT_DISK_IO;
+    if (match_sym(syms, num_frames, "_sync_file"))
+        return CAT_DISK_IO;
+    if (match_sym(syms, num_frames, "vfs_"))
+        return CAT_DISK_IO;
+    if (match_sym(syms, num_frames, "jbd2_"))
+        return CAT_DISK_IO;
+
+    if (match_sym(syms, num_frames, "sk_wait_"))
+        return CAT_NET_IO;
+    if (match_sym(syms, num_frames, "tcp_"))
+        return CAT_NET_IO;
+    if (match_sym(syms, num_frames, "udp_"))
+        return CAT_NET_IO;
+
     return CAT_OTHER;
 }
 
-int classify_waker_reason(int kstack_id, int num_frames, u64 *frames,
-                          const char **syms) {
-    (void)kstack_id;
-    (void)frames;
+// XXX: infer thread wakeup reason per kernel call stack
+int classify_waker_reason(const char **syms, int num_frames) {
     if (match_sym(syms, num_frames, "futex_wake"))
         return WCAT_THREAD;
-    if (match_sym(syms, num_frames, "do_futex"))
-        return WCAT_THREAD;
-    if (match_sym(syms, num_frames, "blk_update_request"))
-        return WCAT_DISK_IO;
-    if (match_sym(syms, num_frames, "scsi_end_request"))
-        return WCAT_DISK_IO;
-    if (match_sym(syms, num_frames, "blk_mq_complete"))
-        return WCAT_DISK_IO;
-    if (match_sym(syms, num_frames, "bio_endio"))
-        return WCAT_DISK_IO;
-    if (match_sym(syms, num_frames, "folio_end_writeback"))
-        return WCAT_DISK_IO;
-    if (match_sym(syms, num_frames, "end_buffer_async"))
-        return WCAT_DISK_IO;
-    if (match_sym(syms, num_frames, "tcp_v4_rcv"))
-        return WCAT_NET_RX;
-    if (match_sym(syms, num_frames, "tcp_v6_rcv"))
-        return WCAT_NET_RX;
-    if (match_sym(syms, num_frames, "udp_rcv"))
-        return WCAT_NET_RX;
-    if (match_sym(syms, num_frames, "netif_receive_skb"))
-        return WCAT_NET_RX;
-    if (match_sym(syms, num_frames, "tcp_data_ready"))
-        return WCAT_NET_RX;
-    if (match_sym(syms, num_frames, "sock_def_readable"))
-        return WCAT_NET_RX;
-    if (match_sym(syms, num_frames, "hrtimer_interrupt"))
-        return WCAT_TIMER;
+
     if (match_sym(syms, num_frames, "hrtimer_wakeup"))
         return WCAT_TIMER;
-    if (match_sym(syms, num_frames, "send_signal"))
-        return WCAT_SIGNAL;
+
+    if (match_sym(syms, num_frames, "jbd2_"))
+        return WCAT_DISK_IO;
+    if (match_sym(syms, num_frames, "kjournald"))
+        return WCAT_DISK_IO;
+    if (match_sym(syms, num_frames, "folio_"))
+        return WCAT_DISK_IO;
+    if (match_sym(syms, num_frames, "bio_"))
+        return WCAT_DISK_IO;
+
+    if (match_sym(syms, num_frames, "sock_def_readable"))
+        return WCAT_NET_RX;
+    if (match_sym(syms, num_frames, "tcp_"))
+        return WCAT_NET_RX;
+    if (match_sym(syms, num_frames, "udp_"))
+        return WCAT_NET_RX;
+    if (match_sym(syms, num_frames, "netif_"))
+        return WCAT_NET_RX;
+
     return WCAT_OTHER;
 }
 
@@ -339,14 +304,14 @@ int report_main(int argc, char **argv) {
         int knframes = 0;
         bt_reader_get_stack(r, bw.blocked_kstack_id, &kframes, &knframes);
 
-        const char *ksyms[8] = {};
-        for (int i = 0; i < knframes && i < 8; i++) {
+        const char *ksyms[12] = {};
+        if (knframes > 12) knframes = 12;
+        for (int i = 0; i < knframes; i++) {
             u64 off;
             ksyms[i] = ksym_lookup(&kt, kframes[i], &off);
         }
 
-        int bcat = classify_block_reason(bw.blocked_kstack_id, knframes,
-                                         kframes, ksyms);
+        int bcat = classify_block_reason(ksyms, knframes);
 
         if (bw.blocked_kstack_id >= 0) {
             struct stack_stat *ss = NULL;
@@ -370,14 +335,14 @@ int report_main(int argc, char **argv) {
         int wknframes = 0;
         bt_reader_get_stack(r, bw.waker_kstack_id, &wkframes, &wknframes);
 
-        const char *wksyms[8] = {};
-        for (int i = 0; i < wknframes && i < 8; i++) {
+        const char *wksyms[12] = {};
+        if (wknframes > 12) wknframes = 12;
+        for (int i = 0; i < wknframes; i++) {
             u64 off;
             wksyms[i] = ksym_lookup(&kt, wkframes[i], &off);
         }
 
-        int wcat = classify_waker_reason(bw.waker_kstack_id, wknframes,
-                                         wkframes, wksyms);
+        int wcat = classify_waker_reason(wksyms, wknframes);
 
         u32 waker_tid = bw.waker_tid;
         char waker_comm[COMM_LEN];

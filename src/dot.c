@@ -15,8 +15,6 @@ static const char *edge_color(int waker_cat) {
         return "green";
     case WCAT_TIMER:
         return "orange";
-    case WCAT_SIGNAL:
-        return "purple";
     default:
         return "gray";
     }
@@ -130,8 +128,6 @@ static const char *special_node_name(int waker_cat) {
         return "net_rx";
     case WCAT_TIMER:
         return "timer";
-    case WCAT_SIGNAL:
-        return "signal";
     case WCAT_OTHER:
         return "kernel";
     default:

@@ -80,13 +80,11 @@ struct thread_entry {
 #define CAT_FUTEX 1
 #define CAT_DISK_IO 2
 #define CAT_NET_IO 3
-#define CAT_EPOLL 4
+#define CAT_POLL 4
 #define CAT_SLEEP 5
-#define CAT_PGFAULT 6
-#define CAT_IO_URING 7
-#define CAT_WAITPID 8
-#define CAT_SIGNAL 9
-#define CAT_OTHER 10
+#define CAT_IO_URING 6
+#define CAT_AIO 7
+#define CAT_OTHER 8
 
 #ifndef __BPF__
 _Static_assert(sizeof(struct btrace_header) == BTRACE_HDR_SIZE,
@@ -97,16 +95,13 @@ _Static_assert(sizeof(struct btrace_header) == BTRACE_HDR_SIZE,
 #define WCAT_DISK_IO 2
 #define WCAT_NET_RX 3
 #define WCAT_TIMER 4
-#define WCAT_SIGNAL 5
-#define WCAT_OTHER 6
+#define WCAT_OTHER 5
 
 #ifndef __BPF__
 const char *block_cat_name(int cat);
 const char *waker_cat_name(int cat);
-int classify_block_reason(int kstack_id, int num_frames, u64 *frames,
-                          const char **syms);
-int classify_waker_reason(int kstack_id, int num_frames, u64 *frames,
-                          const char **syms);
+int classify_block_reason(const char **syms, int num_frames);
+int classify_waker_reason(const char **syms, int num_frames);
 #endif
 
 #endif
