@@ -117,36 +117,4 @@ int handle_sched_waking(struct trace_event_raw_sched_wakeup_template *ctx) {
     return 0;
 }
 
-SEC("tp/sched/sched_process_fork")
-int handle_fork(struct trace_event_raw_sched_process_fork *ctx) {
-    u32 target = get_target_tgid();
-    u64 pid_tgid = bpf_get_current_pid_tgid();
-    u32 parent_tgid = pid_tgid >> 32;
-
-    if (parent_tgid != target)
-        return 0;
-
-    /* Thread creation events are intentionally ignored in userspace.
-     * We keep this tracepoint attached so the skeleton is stable,
-     * but we do not emit any perf event here. */
-    return 0;
-}
-
-SEC("tp/sched/sched_process_exit")
-int handle_exit(struct trace_event_raw_sched_process_template *ctx) {
-    u64 pid_tgid = bpf_get_current_pid_tgid();
-    u32 tid = (u32)pid_tgid;
-    u32 tgid = pid_tgid >> 32;
-
-    u32 target = get_target_tgid();
-    if (tgid != target)
-        return 0;
-
-    bpf_map_delete_elem(&blocked_map, &tid);
-
-    /* Thread exit events are intentionally ignored in userspace.
-     * We only keep the tracepoint to clean up orphaned blocked_map entries. */
-    return 0;
-}
-
 char LICENSE[] SEC("license") = "Dual BSD/GPL";

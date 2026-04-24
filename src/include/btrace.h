@@ -20,8 +20,8 @@ typedef int64_t long_t;
 
 #define BTRACE_MAGIC "BTR1"
 #define BTRACE_VERSION 1
-#define BTRACE_HDR_SIZE 256
-#define COMM_LEN 16
+#define BTRACE_HDR_SIZE 128
+#define COMM_LEN 32
 #define MAX_STACK_DEPTH 127
 #define MAX_STACK_MAP 16384
 #define MAX_BLOCKED_MAP 4096
@@ -47,7 +47,7 @@ struct btrace_header {
     u64 threads_off;
     u64 maps_off;
     u64 kallsyms_off;
-    u8 reserved[168];
+    u8 reserved[40];
 };
 
 struct block_wake_event {
@@ -64,31 +64,6 @@ struct block_wake_event {
     s32 waker_kstack_id;
     char blocked_comm[COMM_LEN];
     char waker_comm[COMM_LEN];
-};
-
-struct block_only_event {
-    u64 timestamp;
-    u64 prev_state;
-    u32 tid;
-    u32 tgid;
-    s32 ustack_id;
-    s32 kstack_id;
-    char comm[COMM_LEN];
-};
-
-struct thread_create_event {
-    u64 timestamp;
-    u32 parent_tid;
-    u32 child_tid;
-    u32 child_tgid;
-    u32 _pad0;
-    char child_comm[COMM_LEN];
-};
-
-struct thread_exit_event {
-    u64 timestamp;
-    u32 tid;
-    u32 tgid;
 };
 
 struct bt_stack_entry {
