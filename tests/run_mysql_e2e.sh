@@ -81,6 +81,8 @@ main() {
     echo "[bench] === baseline (no btrace) ==="
     local base
     base=$(bench baseline | tee "$OUT/baseline.txt" | awk -F= '{print $2}')
+    echo "tps : $base"
+    sleep 10
 
     # ---- Phase 2: with btrace profiling ----
     echo ""
@@ -88,10 +90,10 @@ main() {
     local btfile="$OUT/btrace.btrace"
     sudo "$BTRACE" record -p "$pid" -o "$btfile" >"$OUT/record.log" 2>&1 &
     local btpid=$!
-    sleep 1
 
     local traced
     traced=$(bench traced | tee "$OUT/traced.txt" | awk -F= '{print $2}')
+    echo "tps : $traced"
 
     sudo kill -INT $btpid 2>/dev/null || true
     wait $btpid 2>/dev/null || true
