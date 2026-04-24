@@ -27,10 +27,7 @@ typedef int64_t   long_t;
 #define MAX_BLOCKED_MAP   4096
 #define PERF_BUF_PAGES    64
 
-#define EVT_BLOCK_WAKE     1
-#define EVT_BLOCK_ONLY     2
-#define EVT_THREAD_CREATE  3
-#define EVT_THREAD_EXIT    4
+#define EVENT_MAGIC       0x37815325
 
 #define TASK_RUNNING         0x00000000
 #define TASK_INTERRUPTIBLE   0x00000001

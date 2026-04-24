@@ -117,10 +117,11 @@ struct bt_writer *bt_writer_create(const char *path, uint32_t target_pid, uint64
     return w;
 }
 
-int bt_writer_event(struct bt_writer *w, uint32_t type, const void *data, uint32_t len)
+int bt_writer_event(struct bt_writer *w, const void *data, uint32_t len)
 {
+    const uint32_t magic = EVENT_MAGIC;
     if (!w || !w->fp) return -1;
-    if (fwrite(&type, sizeof(type), 1, w->fp) != 1) return -1;
+    if (fwrite(&magic, sizeof(magic), 1, w->fp) != 1) return -1;
     if (fwrite(&len, sizeof(len), 1, w->fp) != 1) return -1;
     if (fwrite(data, 1, len, w->fp) != len) return -1;
     w->events_count++;

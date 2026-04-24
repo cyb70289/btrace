@@ -5,7 +5,7 @@
 #include <stdio.h>
 
 struct bt_writer *bt_writer_create(const char *path, uint32_t target_pid, uint64_t start_ns);
-int bt_writer_event(struct bt_writer *w, uint32_t type, const void *data, uint32_t len);
+int bt_writer_event(struct bt_writer *w, const void *data, uint32_t len);
 int bt_writer_dump_stacks(struct bt_writer *w, int map_fd);
 int bt_writer_close(struct bt_writer *w, uint64_t end_ns);
 

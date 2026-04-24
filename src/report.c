@@ -224,8 +224,12 @@ int report_main(int argc, char **argv)
     uint64_t total_bw = 0;
 
     for (uint64_t ei = 0; ei < r->hdr.num_events; ei++) {
-        uint32_t evt_type, evt_len;
-        if (fread(&evt_type, sizeof(evt_type), 1, r->fp) != 1) break;
+        uint32_t magic, evt_len;
+        if (fread(&magic, sizeof(magic), 1, r->fp) != 1) break;
+        if (magic != EVENT_MAGIC) {
+            fprintf(stderr, "invalud event magic number\n");
+            return 1;
+        }
         if (fread(&evt_len, sizeof(evt_len), 1, r->fp) != 1) break;
 
         union {
@@ -241,98 +245,96 @@ int report_main(int argc, char **argv)
         }
         if (fread(&evt, 1, evt_len, r->fp) != evt_len) break;
 
-        if (evt_type == EVT_BLOCK_WAKE) {
-            struct block_wake_event *bw = &evt.bw;
-            u64 dur = bw->timestamp - bw->block_timestamp;
-            total_bw++;
+        struct block_wake_event *bw = &evt.bw;
+        u64 dur = bw->timestamp - bw->block_timestamp;
+        total_bw++;
 
-            int tidx = -1;
-            for (int h = (int)((bw->blocked_tid ^ (bw->blocked_tid >> 16)) & 4095);
-                 ; h = (h + 1) & 4095) {
-                int idx = tid_map[h];
-                if (idx == -1) {
-                    if (ntstats < max_threads) {
-                        tid_map[h] = ntstats;
-                        tidx = ntstats++;
-                        tstats[tidx].tid = bw->blocked_tid;
-                        strncpy(tstats[tidx].comm, bw->blocked_comm, COMM_LEN - 1);
-                        tstats[tidx].comm[COMM_LEN - 1] = '\0';
-                        tstats[tidx].min_ns = UINT64_MAX;
-                    }
-                    break;
+        int tidx = -1;
+        for (int h = (int)((bw->blocked_tid ^ (bw->blocked_tid >> 16)) & 4095);
+             ; h = (h + 1) & 4095) {
+            int idx = tid_map[h];
+            if (idx == -1) {
+                if (ntstats < max_threads) {
+                    tid_map[h] = ntstats;
+                    tidx = ntstats++;
+                    tstats[tidx].tid = bw->blocked_tid;
+                    strncpy(tstats[tidx].comm, bw->blocked_comm, COMM_LEN - 1);
+                    tstats[tidx].comm[COMM_LEN - 1] = '\0';
+                    tstats[tidx].min_ns = UINT64_MAX;
                 }
-                if (tstats[idx].tid == bw->blocked_tid) {
-                    tidx = idx;
-                    break;
-                }
+                break;
             }
-            if (tidx >= 0) {
-                tstats[tidx].total_ns += dur;
-                tstats[tidx].count++;
-                if (dur < tstats[tidx].min_ns) tstats[tidx].min_ns = dur;
-                if (dur > tstats[tidx].max_ns) tstats[tidx].max_ns = dur;
+            if (tstats[idx].tid == bw->blocked_tid) {
+                tidx = idx;
+                break;
             }
-
-            u64 *kframes = NULL;
-            int knframes = 0;
-            bt_reader_get_stack(r, bw->blocked_kstack_id, &kframes, &knframes);
-
-            const char *ksyms[8] = {};
-            for (int i = 0; i < knframes && i < 8; i++) {
-                u64 off;
-                ksyms[i] = ksym_lookup(&kt, kframes[i], &off);
-            }
-
-            int bcat = classify_block_reason(bw->blocked_kstack_id,
-                                             knframes, kframes, ksyms);
-
-            if (bw->blocked_kstack_id >= 0) {
-                struct stack_stat *ss = NULL;
-                if (bw->blocked_kstack_id < MAX_STACK_MAP)
-                    ss = kstack_map[bw->blocked_kstack_id];
-                if (!ss && nsstats < max_stacks) {
-                    ss = &sstats[nsstats++];
-                    if (bw->blocked_kstack_id < MAX_STACK_MAP)
-                        kstack_map[bw->blocked_kstack_id] = ss;
-                    ss->kstack_id = bw->blocked_kstack_id;
-                    ss->ustack_id = bw->blocked_ustack_id;
-                    ss->block_cat = bcat;
-                }
-                if (ss) {
-                    ss->total_ns += dur;
-                    ss->count++;
-                }
-            }
-
-            u64 *wkframes = NULL;
-            int wknframes = 0;
-            bt_reader_get_stack(r, bw->waker_kstack_id, &wkframes, &wknframes);
-
-            const char *wksyms[8] = {};
-            for (int i = 0; i < wknframes && i < 8; i++) {
-                u64 off;
-                wksyms[i] = ksym_lookup(&kt, wkframes[i], &off);
-            }
-
-            int wcat = classify_waker_reason(bw->waker_kstack_id,
-                                             wknframes, wkframes, wksyms);
-
-            u32 waker_tid = bw->waker_tid;
-            char waker_comm[COMM_LEN];
-            strncpy(waker_comm, bw->waker_comm, COMM_LEN - 1);
-            waker_comm[COMM_LEN - 1] = '\0';
-
-            if (wcat != WCAT_THREAD) {
-                waker_tid = 0;
-                snprintf(waker_comm, COMM_LEN, "[%s]", waker_cat_name(wcat));
-            }
-
-            dep_graph_add(&graph, bw->blocked_tid, waker_tid,
-                          bcat, wcat, dur,
-                          bw->blocked_kstack_id, bw->blocked_ustack_id,
-                          bw->waker_kstack_id, bw->waker_ustack_id,
-                          bw->blocked_comm, waker_comm);
         }
+        if (tidx >= 0) {
+            tstats[tidx].total_ns += dur;
+            tstats[tidx].count++;
+            if (dur < tstats[tidx].min_ns) tstats[tidx].min_ns = dur;
+            if (dur > tstats[tidx].max_ns) tstats[tidx].max_ns = dur;
+        }
+
+        u64 *kframes = NULL;
+        int knframes = 0;
+        bt_reader_get_stack(r, bw->blocked_kstack_id, &kframes, &knframes);
+
+        const char *ksyms[8] = {};
+        for (int i = 0; i < knframes && i < 8; i++) {
+            u64 off;
+            ksyms[i] = ksym_lookup(&kt, kframes[i], &off);
+        }
+
+        int bcat = classify_block_reason(bw->blocked_kstack_id,
+                                         knframes, kframes, ksyms);
+
+        if (bw->blocked_kstack_id >= 0) {
+            struct stack_stat *ss = NULL;
+            if (bw->blocked_kstack_id < MAX_STACK_MAP)
+                ss = kstack_map[bw->blocked_kstack_id];
+            if (!ss && nsstats < max_stacks) {
+                ss = &sstats[nsstats++];
+                if (bw->blocked_kstack_id < MAX_STACK_MAP)
+                    kstack_map[bw->blocked_kstack_id] = ss;
+                ss->kstack_id = bw->blocked_kstack_id;
+                ss->ustack_id = bw->blocked_ustack_id;
+                ss->block_cat = bcat;
+            }
+            if (ss) {
+                ss->total_ns += dur;
+                ss->count++;
+            }
+        }
+
+        u64 *wkframes = NULL;
+        int wknframes = 0;
+        bt_reader_get_stack(r, bw->waker_kstack_id, &wkframes, &wknframes);
+
+        const char *wksyms[8] = {};
+        for (int i = 0; i < wknframes && i < 8; i++) {
+            u64 off;
+            wksyms[i] = ksym_lookup(&kt, wkframes[i], &off);
+        }
+
+        int wcat = classify_waker_reason(bw->waker_kstack_id,
+                                         wknframes, wkframes, wksyms);
+
+        u32 waker_tid = bw->waker_tid;
+        char waker_comm[COMM_LEN];
+        strncpy(waker_comm, bw->waker_comm, COMM_LEN - 1);
+        waker_comm[COMM_LEN - 1] = '\0';
+
+        if (wcat != WCAT_THREAD) {
+            waker_tid = 0;
+            snprintf(waker_comm, COMM_LEN, "[%s]", waker_cat_name(wcat));
+        }
+
+        dep_graph_add(&graph, bw->blocked_tid, waker_tid,
+                      bcat, wcat, dur,
+                      bw->blocked_kstack_id, bw->blocked_ustack_id,
+                      bw->waker_kstack_id, bw->waker_ustack_id,
+                      bw->blocked_comm, waker_comm);
     }
 
     double duration_s = (double)(r->hdr.end_time_ns - r->hdr.start_time_ns) / 1e9;

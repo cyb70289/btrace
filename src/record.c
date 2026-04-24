@@ -37,30 +37,9 @@ static void perf_event_cb(void *ctx, int cpu, void *data, unsigned int size)
     (void)cpu;
     struct record_ctx *rctx = ctx;
     if (!rctx || !rctx->writer) return;
-    if (size < 1) return;
 
-    u8 type = *(u8 *)data;
-    void *evt_data = (char *)data + 1;
-    unsigned int evt_len = size - 1;
-
-    switch (type) {
-    case EVT_BLOCK_WAKE:
-        if (evt_len >= sizeof(struct block_wake_event))
-            bt_writer_event(rctx->writer, EVT_BLOCK_WAKE, evt_data, sizeof(struct block_wake_event));
-        break;
-    case EVT_BLOCK_ONLY:
-        if (evt_len >= sizeof(struct block_only_event))
-            bt_writer_event(rctx->writer, EVT_BLOCK_ONLY, evt_data, sizeof(struct block_only_event));
-        break;
-    case EVT_THREAD_CREATE:
-        if (evt_len >= sizeof(struct thread_create_event))
-            bt_writer_event(rctx->writer, EVT_THREAD_CREATE, evt_data, sizeof(struct thread_create_event));
-        break;
-    case EVT_THREAD_EXIT:
-        if (evt_len >= sizeof(struct thread_exit_event))
-            bt_writer_event(rctx->writer, EVT_THREAD_EXIT, evt_data, sizeof(struct thread_exit_event));
-        break;
-    }
+    if (size >= sizeof(struct block_wake_event))
+        bt_writer_event(rctx->writer, data, sizeof(struct block_wake_event));
 }
 
 static uint64_t now_ns(void)
@@ -168,32 +147,7 @@ int record_main(int argc, char **argv)
         uint32_t key = 0;
         uint64_t dropped = 0;
         if (bpf_map__lookup_elem(obj->maps.stats_map, &key, sizeof(key), &dropped, sizeof(dropped), BPF_ANY) == 0 && dropped > 0) {
-            fprintf(stderr, "Warning: %llu blocked events dropped due to blocked_map overflow\n", (unsigned long long)dropped);
-        }
-    }
-
-    {
-        uint32_t key = 0, next_key;
-        while (bpf_map__get_next_key(obj->maps.blocked_map, &key, &next_key, sizeof(next_key)) == 0) {
-            struct {
-                uint64_t timestamp;
-                uint32_t tgid;
-                long prev_state;
-                int ustack_id;
-                int kstack_id;
-                char comm[COMM_LEN];
-            } val;
-            if (bpf_map__lookup_elem(obj->maps.blocked_map, &next_key, sizeof(next_key), &val, sizeof(val), BPF_ANY) == 0) {
-                struct block_only_event bo = {};
-                bo.tid = next_key;
-                bo.tgid = val.tgid;
-                bo.prev_state = (uint64_t)val.prev_state;
-                bo.ustack_id = val.ustack_id;
-                bo.kstack_id = val.kstack_id;
-                memcpy(bo.comm, val.comm, COMM_LEN);
-                bt_writer_event(writer, EVT_BLOCK_ONLY, &bo, sizeof(bo));
-            }
-            key = next_key;
+            fprintf(stderr, "Warning: %llu blocked events dropped\n", (unsigned long long)dropped);
         }
     }
 

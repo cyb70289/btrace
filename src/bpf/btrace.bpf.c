@@ -115,11 +115,7 @@ int handle_sched_waking(struct trace_event_raw_sched_wakeup_template *ctx)
     __builtin_memcpy(evt.blocked_comm, bt->comm, COMM_LEN);
     bpf_get_current_comm(&evt.waker_comm, sizeof(evt.waker_comm));
 
-    u8 out_buf[128];
-    out_buf[0] = EVT_BLOCK_WAKE;
-    __builtin_memcpy(&out_buf[1], &evt, sizeof(evt));
-    bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU,
-                          out_buf, 1 + sizeof(evt));
+    bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &evt, sizeof(evt));
     bpf_map_delete_elem(&blocked_map, &target_pid);
     return 0;
 }
