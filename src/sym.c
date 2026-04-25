@@ -771,3 +771,185 @@ int sym_resolve_source(const char *binary, u64 addr, char *func, size_t funcsz,
 
     return 0;
 }
+
+#define BATCH_CHUNK 4096
+
+static void resolve_binary_batch(const char *binary, const u64 *addrs,
+                                 int count) {
+    /* 512KB is well below typical Linux ARG_MAX (~2MB) and comfortably
+     * fits BATCH_CHUNK addresses (~74KB) plus the base command. */
+    size_t cmd_size = 512 * 1024;
+    char *cmd = malloc(cmd_size);
+    if (!cmd)
+        return;
+
+    for (int offset = 0; offset < count; offset += BATCH_CHUNK) {
+        int chunk = count - offset;
+        if (chunk > BATCH_CHUNK)
+            chunk = BATCH_CHUNK;
+
+        int pos = snprintf(cmd, cmd_size, "addr2line -e %s -f 2>/dev/null",
+                           binary);
+        if (pos < 0 || (size_t)pos >= cmd_size) {
+            for (int j = 0; j < chunk; j++)
+                a2l_addr_insert(binary, addrs[offset + j], "");
+            a2l_mark_source(binary, 0);
+            continue;
+        }
+        for (int i = 0; i < chunk; i++) {
+            int n = snprintf(cmd + pos, cmd_size - pos, " 0x%lx",
+                             (unsigned long)addrs[offset + i]);
+            if (n < 0 || n >= (int)(cmd_size - pos)) {
+                chunk = i;
+                break;
+            }
+            pos += n;
+        }
+
+        FILE *p = popen(cmd, "r");
+        if (!p) {
+            for (int j = 0; j < chunk; j++)
+                a2l_addr_insert(binary, addrs[offset + j], "");
+            a2l_mark_source(binary, 0);
+            continue;
+        }
+
+        for (int i = 0; i < chunk; i++) {
+            char *line1 = NULL, *line2 = NULL;
+            size_t len1 = 0, len2 = 0;
+            ssize_t n1 = getline(&line1, &len1, p);
+            ssize_t n2 = getline(&line2, &len2, p);
+            if (n1 < 0 || n2 < 0) {
+                free(line1);
+                free(line2);
+                for (int j = i; j < chunk; j++)
+                    a2l_addr_insert(binary, addrs[offset + j], "");
+                a2l_mark_source(binary, 0);
+                break;
+            }
+            if (n1 > 0 && line1[n1 - 1] == '\n')
+                line1[n1 - 1] = '\0';
+            if (n2 > 0 && line2[n2 - 1] == '\n')
+                line2[n2 - 1] = '\0';
+
+            char src[256] = "";
+            int useful = 0;
+            char *colon = strrchr(line2, ':');
+            if (colon) {
+                *colon = '\0';
+                const char *afbase = base_name(line2);
+                int aline = atoi(colon + 1);
+                if (aline > 0) {
+                    snprintf(src, sizeof(src), "%s:%d", afbase, aline);
+                    useful = 1;
+                } else if (afbase[0] && afbase[0] != '?') {
+                    snprintf(src, sizeof(src), "%s", afbase);
+                    useful = 1;
+                }
+            }
+
+            a2l_addr_insert(binary, addrs[offset + i], src);
+            if (useful)
+                a2l_mark_source(binary, 1);
+            else
+                a2l_mark_source(binary, 0);
+
+            free(line1);
+            free(line2);
+        }
+        pclose(p);
+    }
+
+    free(cmd);
+}
+
+struct batch_entry {
+    char path[512];
+    u64 addr;
+};
+
+static int batch_entry_cmp(const void *a, const void *b) {
+    const struct batch_entry *ea = a, *eb = b;
+    int c = strcmp(ea->path, eb->path);
+    if (c != 0)
+        return c;
+    if (ea->addr < eb->addr)
+        return -1;
+    if (ea->addr > eb->addr)
+        return 1;
+    return 0;
+}
+
+void sym_pre_resolve_batch(struct sym_cache *sc, struct maps_parse *mp,
+                           const u64 *addrs, int count) {
+    if (!mp || count <= 0)
+        return;
+
+    struct batch_entry *entries = calloc((size_t)count, sizeof(*entries));
+    if (!entries)
+        return;
+
+    int nentries = 0;
+    for (int i = 0; i < count; i++) {
+        struct maps_entry me;
+        if (maps_find(mp, addrs[i], &me) < 0)
+            continue;
+
+        struct sym_table *st = get_or_load(sc, me.path);
+        if (!st)
+            continue;
+
+        u64 file_addr = addrs[i] - me.start + me.offset;
+
+        const char *a2l_binary = me.path;
+        if (st->count > 0 && st->path && strcmp(st->path, me.path) != 0)
+            a2l_binary = st->path;
+
+        if (a2l_known_no_source(a2l_binary))
+            continue;
+        if (a2l_addr_lookup(a2l_binary, file_addr))
+            continue;
+
+        snprintf(entries[nentries].path, sizeof(entries[nentries].path), "%s",
+                 a2l_binary);
+        entries[nentries].addr = file_addr;
+        nentries++;
+    }
+
+    if (nentries == 0) {
+        free(entries);
+        return;
+    }
+
+    qsort(entries, (size_t)nentries, sizeof(*entries), batch_entry_cmp);
+
+    int ndedup = 0;
+    for (int i = 0; i < nentries; i++) {
+        if (ndedup == 0 ||
+            strcmp(entries[i].path, entries[ndedup - 1].path) != 0 ||
+            entries[i].addr != entries[ndedup - 1].addr) {
+            entries[ndedup++] = entries[i];
+        }
+    }
+
+    int start = 0;
+    while (start < ndedup) {
+        int end = start + 1;
+        while (end < ndedup &&
+               strcmp(entries[end].path, entries[start].path) == 0)
+            end++;
+
+        int group_count = end - start;
+        u64 *group_addrs = malloc((size_t)group_count * sizeof(u64));
+        if (group_addrs) {
+            for (int i = 0; i < group_count; i++)
+                group_addrs[i] = entries[start + i].addr;
+            resolve_binary_batch(entries[start].path, group_addrs,
+                                 group_count);
+            free(group_addrs);
+        }
+        start = end;
+    }
+
+    free(entries);
+}

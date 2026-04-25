@@ -32,7 +32,7 @@ It operates in two phases: **in-kernel recording** and **offline analysis**.
 
 > btrace intentionally ignores threads created *after* recording starts, as well as blocking events where the wakeup did not occur before recording stopped. The thread list is a snapshot taken at record start.
 
-> The report (`src/report.c`) categorizes blocking and wakeup reasons by matching kernel stack function names against heuristics. These heuristics depend on kernel symbol names. They are incomplete and may be fragile across kernel versions.
+> The report (`src/report.c`) categorizes blocking and wakeup reasons by matching kernel stack function names (at most 12 frames) against heuristics. These heuristics depend on kernel symbol names. They are incomplete and may be fragile across kernel versions.
 
 ## Build
 

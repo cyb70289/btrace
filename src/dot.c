@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define DOT_MAX_FRAMES 12
+
 static const char *edge_color(int waker_cat) {
     switch (waker_cat) {
     case WCAT_THREAD:
@@ -232,21 +234,25 @@ static void write_edge_stacks(FILE *f, struct dep_edge *e, int edge_idx,
     fprintf(f, "    \"count\": %u,\n", e->count);
 
     fprintf(f, "    \"blocked_stack\": [");
-    write_stack_frames(f, r, e->blocked_kstack_id, kt, sc, mp, 12);
+    write_stack_frames(f, r, e->blocked_kstack_id, kt, sc, mp,
+                       DOT_MAX_FRAMES);
     fprintf(f, "],\n");
 
     fprintf(f, "    \"blocked_user_stack\": [");
-    write_stack_frames(f, r, e->blocked_ustack_id, kt, sc, mp, 12);
+    write_stack_frames(f, r, e->blocked_ustack_id, kt, sc, mp,
+                       DOT_MAX_FRAMES);
     fprintf(f, "],\n");
 
     fprintf(f, "    \"waker_stack\": [");
-    write_stack_frames(f, r, e->waker_kstack_id, kt, sc, mp, 12);
+    write_stack_frames(f, r, e->waker_kstack_id, kt, sc, mp,
+                       DOT_MAX_FRAMES);
     fprintf(f, "],\n");
 
     fprintf(f, "    \"waker_user_stack\": [");
     if (e->waker_cat != WCAT_DISK_IO && e->waker_cat != WCAT_NET_RX &&
         e->waker_cat != WCAT_TIMER)
-        write_stack_frames(f, r, e->waker_ustack_id, kt, sc, mp, 12);
+        write_stack_frames(f, r, e->waker_ustack_id, kt, sc, mp,
+                           DOT_MAX_FRAMES);
     fprintf(f, "]\n  }");
 }
 
@@ -273,6 +279,49 @@ int dot_generate(struct dep_graph *g, const char *path, u32 min_count,
         fclose(f);
         free(used);
         return 0;
+    }
+
+    /* Pre-resolve user symbols for all used edges to avoid repeated
+     * addr2line process spawns */
+    {
+        u64 *raw_addrs = NULL;
+        int raw_cap = 0;
+        int raw_count = 0;
+        for (int k = 0; k < nused; k++) {
+            struct dep_edge *e = &g->edges[used[k]];
+            int stack_ids[4] = {
+                e->blocked_kstack_id, e->blocked_ustack_id,
+                e->waker_kstack_id, e->waker_ustack_id,
+            };
+            int nstacks = 4;
+            if (e->waker_cat == WCAT_DISK_IO || e->waker_cat == WCAT_TIMER)
+                nstacks = 3;
+            for (int s = 0; s < nstacks; s++) {
+                if (stack_ids[s] < 0)
+                    continue;
+                u64 *frames = NULL;
+                int nframes = 0;
+                if (bt_reader_get_stack(r, stack_ids[s], &frames, &nframes) !=
+                    0)
+                    continue;
+                for (int f = 0; f < nframes && f < DOT_MAX_FRAMES; f++) {
+                    u64 off;
+                    if (ksym_lookup(kt, frames[f], &off))
+                        continue;
+                    if (frames[f] == 0)
+                        continue;
+                    if (raw_count >= raw_cap) {
+                        raw_cap = raw_cap ? raw_cap * 2 : 1024;
+                        raw_addrs = realloc(raw_addrs,
+                                            (size_t)raw_cap * sizeof(u64));
+                    }
+                    raw_addrs[raw_count++] = frames[f];
+                }
+            }
+        }
+        if (raw_count > 0)
+            sym_pre_resolve_batch(sc, mp, raw_addrs, raw_count);
+        free(raw_addrs);
     }
 
     fprintf(f, "digraph btrace {\n");

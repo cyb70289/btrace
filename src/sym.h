@@ -62,4 +62,7 @@ const char *sym_resolve_user_src(struct sym_cache *sc, struct maps_parse *mp,
 int sym_resolve_source(const char *binary, u64 addr, char *func, size_t funcsz,
                        char *file, size_t filesz, int *line);
 
+void sym_pre_resolve_batch(struct sym_cache *sc, struct maps_parse *mp,
+                           const u64 *addrs, int count);
+
 #endif
