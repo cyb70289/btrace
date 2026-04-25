@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define DOT_MAX_FRAMES 12
+#define DOT_MAX_FRAMES 32
 
 static const char *edge_color(int waker_cat) {
     switch (waker_cat) {
