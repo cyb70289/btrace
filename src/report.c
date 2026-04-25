@@ -50,82 +50,57 @@ const char *waker_cat_name(int cat) {
 
 static int is_special_tid(u32 tid) { return tid == 0; }
 
-static int match_sym(const char **syms, int nframes, const char *pattern) {
-    for (int i = 0; i < nframes; i++) {
-        if (syms[i] && strstr(syms[i], pattern))
-            return 1;
-    }
-    return 0;
+struct reason_pattern {
+    const char *str;
+    int cat;
+};
+
+static int match_pattern(const char *sym, const struct reason_pattern *pat) {
+    return sym && strstr(sym, pat->str);
 }
+
+static const struct reason_pattern block_patterns[] = {
+    {"futex_wait", CAT_FUTEX},   {"nanosleep", CAT_SLEEP},
+    {"ep_poll", CAT_POLL},       {"do_poll", CAT_POLL},
+    {"io_uring", CAT_IO_URING},  {"io_getevents", CAT_AIO},
+    {"folio_", CAT_DISK_IO},     {"_fsync", CAT_DISK_IO},
+    {"_fdatasync", CAT_DISK_IO}, {"_sync_file", CAT_DISK_IO},
+    {"vfs_", CAT_DISK_IO},       {"jbd2_", CAT_DISK_IO},
+    {"sk_wait_", CAT_NET_IO},    {"tcp_", CAT_NET_IO},
+    {"udp_", CAT_NET_IO},        {NULL, 0}};
 
 // XXX: infer thread block reason per kernel call stack
 int classify_block_reason(const char **syms, int num_frames) {
-    if (match_sym(syms, num_frames, "futex_wait"))
-        return CAT_FUTEX;
-
-    if (match_sym(syms, num_frames, "nanosleep"))
-        return CAT_SLEEP;
-
-    if (match_sym(syms, num_frames, "ep_poll"))
-        return CAT_POLL;
-    if (match_sym(syms, num_frames, "do_poll"))
-        return CAT_POLL;
-
-    if (match_sym(syms, num_frames, "io_uring"))
-        return CAT_IO_URING;
-
-    if (match_sym(syms, num_frames, "io_getevents"))
-        return CAT_AIO;
-
-    if (match_sym(syms, num_frames, "folio_"))
-        return CAT_DISK_IO;
-    if (match_sym(syms, num_frames, "_fsync"))
-        return CAT_DISK_IO;
-    if (match_sym(syms, num_frames, "_fdatasync"))
-        return CAT_DISK_IO;
-    if (match_sym(syms, num_frames, "_sync_file"))
-        return CAT_DISK_IO;
-    if (match_sym(syms, num_frames, "vfs_"))
-        return CAT_DISK_IO;
-    if (match_sym(syms, num_frames, "jbd2_"))
-        return CAT_DISK_IO;
-
-    if (match_sym(syms, num_frames, "sk_wait_"))
-        return CAT_NET_IO;
-    if (match_sym(syms, num_frames, "tcp_"))
-        return CAT_NET_IO;
-    if (match_sym(syms, num_frames, "udp_"))
-        return CAT_NET_IO;
-
+    for (const struct reason_pattern *p = block_patterns; p->str; p++) {
+        for (int i = 0; i < num_frames; i++) {
+            if (match_pattern(syms[i], p))
+                return p->cat;
+        }
+    }
     return CAT_OTHER;
 }
 
+static const struct reason_pattern waker_patterns[] = {
+    {"futex_wake", WCAT_THREAD},
+    {"hrtimer_wakeup", WCAT_TIMER},
+    {"jbd2_", WCAT_DISK_IO},
+    {"kjournald", WCAT_DISK_IO},
+    {"folio_", WCAT_DISK_IO},
+    {"bio_", WCAT_DISK_IO},
+    {"sock_def_readable", WCAT_NET_RX},
+    {"tcp_", WCAT_NET_RX},
+    {"udp_", WCAT_NET_RX},
+    {"netif_", WCAT_NET_RX},
+    {NULL, 0}};
+
 // XXX: infer thread wakeup reason per kernel call stack
 int classify_waker_reason(const char **syms, int num_frames) {
-    if (match_sym(syms, num_frames, "futex_wake"))
-        return WCAT_THREAD;
-
-    if (match_sym(syms, num_frames, "hrtimer_wakeup"))
-        return WCAT_TIMER;
-
-    if (match_sym(syms, num_frames, "jbd2_"))
-        return WCAT_DISK_IO;
-    if (match_sym(syms, num_frames, "kjournald"))
-        return WCAT_DISK_IO;
-    if (match_sym(syms, num_frames, "folio_"))
-        return WCAT_DISK_IO;
-    if (match_sym(syms, num_frames, "bio_"))
-        return WCAT_DISK_IO;
-
-    if (match_sym(syms, num_frames, "sock_def_readable"))
-        return WCAT_NET_RX;
-    if (match_sym(syms, num_frames, "tcp_"))
-        return WCAT_NET_RX;
-    if (match_sym(syms, num_frames, "udp_"))
-        return WCAT_NET_RX;
-    if (match_sym(syms, num_frames, "netif_"))
-        return WCAT_NET_RX;
-
+    for (const struct reason_pattern *p = waker_patterns; p->str; p++) {
+        for (int i = 0; i < num_frames; i++) {
+            if (match_pattern(syms[i], p))
+                return p->cat;
+        }
+    }
     return WCAT_OTHER;
 }
 
@@ -305,7 +280,8 @@ int report_main(int argc, char **argv) {
         bt_reader_get_stack(r, bw.blocked_kstack_id, &kframes, &knframes);
 
         const char *ksyms[12] = {};
-        if (knframes > 12) knframes = 12;
+        if (knframes > 12)
+            knframes = 12;
         for (int i = 0; i < knframes; i++) {
             u64 off;
             ksyms[i] = ksym_lookup(&kt, kframes[i], &off);
@@ -336,7 +312,8 @@ int report_main(int argc, char **argv) {
         bt_reader_get_stack(r, bw.waker_kstack_id, &wkframes, &wknframes);
 
         const char *wksyms[12] = {};
-        if (wknframes > 12) wknframes = 12;
+        if (wknframes > 12)
+            wknframes = 12;
         for (int i = 0; i < wknframes; i++) {
             u64 off;
             wksyms[i] = ksym_lookup(&kt, wkframes[i], &off);
@@ -356,8 +333,8 @@ int report_main(int argc, char **argv) {
 
         dep_graph_add(&graph, bw.blocked_tid, waker_tid, bcat, wcat, dur,
                       bw.blocked_kstack_id, bw.blocked_ustack_id,
-                      bw.waker_kstack_id, bw.waker_ustack_id,
-                      bw.blocked_comm, waker_comm);
+                      bw.waker_kstack_id, bw.waker_ustack_id, bw.blocked_comm,
+                      waker_comm);
     }
 
     double duration_s =
