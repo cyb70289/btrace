@@ -131,12 +131,13 @@ This script:
 Attach btrace to a running process and collect blocking events:
 
 ```bash
-sudo btrace record -p <PID> [-o <output.btrace>]
+sudo btrace record -p <PID> [-o <output.btrace>] [-d <sec>]
 ```
 
 Options:
 - `-p <PID>` — target process PID (required)
 - `-o <file>` — output file (default: `btrace.btrace`)
+- `-d <sec>` — duration in seconds (default: until Ctrl+C)
 
 Press Ctrl+C (or send SIGINT) to stop recording.
 
@@ -144,6 +145,12 @@ Example — profile a MySQL server:
 
 ```bash
 sudo btrace record -p $(pidof mysqld) -o mysql.btrace
+```
+
+Example — profile for 10 seconds:
+
+```bash
+sudo btrace record -p $(pidof mysqld) -d 10 -o mysql.btrace
 ```
 
 ### Report

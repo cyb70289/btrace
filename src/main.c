@@ -9,7 +9,7 @@ static void usage(void) {
     fprintf(stderr, "btrace - profile thread block/wakeup relationships\n"
                     "\n"
                     "Usage:\n"
-                    "  btrace record -p <PID> [-o <file>]\n"
+                    "  btrace record -p <PID> [-o <file>] [-d <sec>]\n"
                     "  btrace report -i <file> [-o <dir>] [--dot]\n"
                     "\n"
                     "Commands:\n"

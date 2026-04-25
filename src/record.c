@@ -48,15 +48,17 @@ static uint64_t now_ns(void) {
 
 int record_main(int argc, char **argv) {
     int pid = 0;
+    int duration = 0;
     const char *output = "btrace.out";
 
     static struct option long_opts[] = {
         {"pid", required_argument, NULL, 'p'},
         {"output", required_argument, NULL, 'o'},
+        {"duration", required_argument, NULL, 'd'},
         {NULL, 0, NULL, 0}};
 
     int c;
-    while ((c = getopt_long(argc, argv, "p:o:", long_opts, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "p:o:d:", long_opts, NULL)) != -1) {
         switch (c) {
         case 'p':
             pid = atoi(optarg);
@@ -64,14 +66,22 @@ int record_main(int argc, char **argv) {
         case 'o':
             output = optarg;
             break;
+        case 'd':
+            duration = atoi(optarg);
+            break;
         default:
-            fprintf(stderr, "Usage: btrace record -p <PID> [-o <file>]\n");
+            fprintf(stderr, "Usage: btrace record -p <PID> [-o <file>] [-d <sec>]\n");
             return 1;
         }
     }
 
     if (pid <= 0) {
         fprintf(stderr, "Error: -p <PID> is required\n");
+        return 1;
+    }
+
+    if (duration < 0) {
+        fprintf(stderr, "Error: -d <sec> must be non-negative\n");
         return 1;
     }
 
@@ -114,7 +124,10 @@ int record_main(int argc, char **argv) {
         return 1;
     }
 
-    fprintf(stderr, "Recording PID %d ... Press Ctrl-C to stop\n", pid);
+    if (duration > 0)
+        fprintf(stderr, "Recording PID %d for %d seconds ...\n", pid, duration);
+    else
+        fprintf(stderr, "Recording PID %d ... Press Ctrl-C to stop\n", pid);
 
     struct record_ctx rctx = {.writer = writer};
 
@@ -133,6 +146,12 @@ int record_main(int argc, char **argv) {
     signal(SIGTERM, sig_handler);
 
     while (!stopping) {
+        if (duration > 0) {
+            uint64_t elapsed = now_ns() - start_ns;
+            if (elapsed >= (uint64_t)duration * 1000000000ULL) {
+                break;
+            }
+        }
         int err = perf_buffer__poll(pb, 100);
         if (err < 0 && err != -EINTR) {
             fprintf(stderr, "Error polling perf buffer: %s\n", strerror(-err));
