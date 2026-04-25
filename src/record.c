@@ -52,7 +52,6 @@ int record_main(int argc, char **argv) {
 
     static struct option long_opts[] = {
         {"pid", required_argument, NULL, 'p'},
-        {"depth", required_argument, NULL, 'd'},
         {"output", required_argument, NULL, 'o'},
         {NULL, 0, NULL, 0}};
 

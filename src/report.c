@@ -443,6 +443,7 @@ int report_main(int argc, char **argv) {
     if (gen_dot) {
         char dotpath[4096];
         snprintf(dotpath, sizeof(dotpath), "%s/btrace.dot", outdir);
+        fprintf(stderr, "\nGenerating DOT graph ...\n");
         if (dot_generate(&graph, dotpath, min_count, min_ns, r, &kt, &sc,
                          &mp) == 0)
             fprintf(stderr, "DOT graph written to %s\n", dotpath);

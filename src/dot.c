@@ -254,8 +254,10 @@ int dot_generate(struct dep_graph *g, const char *path, u32 min_count,
                  u64 min_ns, struct bt_reader *r, struct ksym_table *kt,
                  struct sym_cache *sc, struct maps_parse *mp) {
     FILE *f = fopen(path, "w");
-    if (!f)
+    if (!f) {
+        fprintf(stderr, "failed to create file %s\n", path);
         return -1;
+    }
 
     int *used = calloc(g->edge_count, sizeof(int));
     int nused = 0;
