@@ -6,7 +6,7 @@ Below is a dependency graph of a MySQL server under sysbench OLTP workload (read
 
 *Click the image to open interactive html*
 
-<a href="https://cyb70289.github.io/btrace/assets/mysql-count100.html"><img src="assets/mysql-count100.svg" alt="MySQL blocking graph (min-count=100)" width="800"></a>
+<a href="https://cyb70289.github.io/btrace/assets/mysql.html"><img src="assets/mysql.png" alt="MySQL blocking graph (min-count=100)" width="600"></a>
 
 ## How It Works
 
