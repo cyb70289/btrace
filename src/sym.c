@@ -467,10 +467,6 @@ static void demangle_init(void) {
 }
 
 static void demangle(const char *mangled, char *out, size_t outsz) {
-    if (!mangled) {
-        snprintf(out, outsz, "%s", mangled);
-        return;
-    }
     const char *p = mangled;
     while (*p == '_')
         p++;
